@@ -1,0 +1,74 @@
+# Xcode
+## User settings
+xcuserdata/
+*.xcuserstate
+
+## App packaging
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+## Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Package Manager
+.build/
+Packages/
+Package.pins
+Package.resolved
+
+# Generated Xcode files (since we use XcodeGen)
+*.xcodeproj
+*.xcworkspace
+!project.yml
+
+# CocoaPods
+Pods/
+
+# Firebase
+GoogleService-Info.plist
+.firebase/
+firebase-debug.log
+ui-debug.log
+.runtimeconfig.json
+
+# Node.js / Firebase Functions
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+functions/lib/
+functions/*.log
+.env
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Code coverage
+*.gcda
+*.gcno
+*.gcov
+coverage/
+
+# Build
+build/
+DerivedData/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3 
