@@ -12,6 +12,31 @@ class CreateExerciseViewModel: ObservableObject {
     @Published var errorMessage = ""
     @Published var isUploading = false
     @Published var videoData: Data?
+    @Published var isRecording = false
+    @Published var showCamera = false
+    
+    // Camera session properties
+    var captureSession: AVCaptureSession?
+    var videoOutput: AVCaptureMovieFileOutput?
+    private var temporaryRecordingURL: URL?
+    private var recordingDelegate = VideoRecordingDelegate()
+    
+    init() {
+        recordingDelegate.onFinishRecording = { [weak self] url, error in
+            if let error = error {
+                Task { @MainActor in
+                    self?.showError = true
+                    self?.errorMessage = "Recording failed: \(error.localizedDescription)"
+                }
+                return
+            }
+            
+            Task { @MainActor in
+                await self?.processRecordedVideo(at: url)
+                self?.showCamera = false
+            }
+        }
+    }
     
     var canUpload: Bool {
         !exercise.title.isEmpty &&
@@ -89,6 +114,89 @@ class CreateExerciseViewModel: ObservableObject {
         }
         
         isUploading = false
+    }
+    
+    func setupCaptureSession() {
+        captureSession = AVCaptureSession()
+        
+        guard let captureSession = captureSession else { return }
+        
+        do {
+            // Add video input
+            guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
+                throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "No video device found"])
+            }
+            let videoInput = try AVCaptureDeviceInput(device: videoDevice)
+            if captureSession.canAddInput(videoInput) {
+                captureSession.addInput(videoInput)
+            }
+            
+            // Add audio input
+            guard let audioDevice = AVCaptureDevice.default(for: .audio) else {
+                throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "No audio device found"])
+            }
+            let audioInput = try AVCaptureDeviceInput(device: audioDevice)
+            if captureSession.canAddInput(audioInput) {
+                captureSession.addInput(audioInput)
+            }
+            
+            // Add video output
+            let output = AVCaptureMovieFileOutput()
+            if captureSession.canAddOutput(output) {
+                captureSession.addOutput(output)
+                videoOutput = output
+            }
+            
+        } catch {
+            showError = true
+            errorMessage = "Failed to setup camera: \(error.localizedDescription)"
+        }
+    }
+    
+    func startRecording() {
+        guard let output = videoOutput else { return }
+        
+        // Create temporary URL for recording
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileName = "\(UUID().uuidString).mov"
+        temporaryRecordingURL = tempDir.appendingPathComponent(fileName)
+        
+        guard let recordingURL = temporaryRecordingURL else { return }
+        
+        output.startRecording(to: recordingURL, recordingDelegate: recordingDelegate)
+        isRecording = true
+    }
+    
+    func stopRecording() {
+        videoOutput?.stopRecording()
+        isRecording = false
+    }
+    
+    func processRecordedVideo(at url: URL) async {
+        do {
+            let videoData = try Data(contentsOf: url)
+            self.videoData = videoData
+            
+            // Generate thumbnail
+            let asset = AVAsset(url: url)
+            let imageGenerator = AVAssetImageGenerator(asset: asset)
+            imageGenerator.appliesPreferredTrackTransform = true
+            
+            let cgImage = try imageGenerator.copyCGImage(at: .zero, actualTime: nil)
+            self.videoThumbnail = UIImage(cgImage: cgImage)
+            
+            // Get video duration
+            let duration = try await asset.load(.duration)
+            self.exercise.duration = Int(duration.seconds)
+            
+            // Clean up temporary file
+            try FileManager.default.removeItem(at: url)
+            temporaryRecordingURL = nil
+            
+        } catch {
+            showError = true
+            errorMessage = "Failed to process recorded video: \(error.localizedDescription)"
+        }
     }
 }
 

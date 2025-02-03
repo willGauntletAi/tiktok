@@ -23,11 +23,31 @@ struct CreateExerciseView: View {
                             .scaledToFit()
                             .frame(height: 200)
                     }
+                }
+                
+                Section("Record or Select Video") {
+                    Button(action: { viewModel.showCamera = true }) {
+                        HStack {
+                            Image(systemName: "camera")
+                                .frame(width: 24, height: 24)
+                            Text(viewModel.videoThumbnail == nil ? "Record New Video" : "Record Different Video")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
                     
                     PhotosPicker(selection: $selectedItem,
                                matching: .videos) {
-                        Label(viewModel.videoThumbnail == nil ? "Select Video" : "Change Video",
-                              systemImage: "video.badge.plus")
+                        HStack {
+                            Image(systemName: "photo.on.rectangle")
+                                .frame(width: 24, height: 24)
+                            Text(viewModel.videoThumbnail == nil ? "Select from Library" : "Choose Different Video")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.gray)
+                        }
                     }
                     .onChange(of: selectedItem) { newValue in
                         Task {
@@ -120,6 +140,9 @@ struct CreateExerciseView: View {
                         showingMuscleSelector = false
                     })
                 }
+            }
+            .fullScreenCover(isPresented: $viewModel.showCamera) {
+                CameraView(viewModel: viewModel)
             }
             .alert("Error", isPresented: $viewModel.showError) {
                 Button("OK", role: .cancel) {}
