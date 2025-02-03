@@ -11,8 +11,7 @@ class CreateExerciseViewModel: ObservableObject {
     @Published var showError = false
     @Published var errorMessage = ""
     @Published var isUploading = false
-    
-    private var videoData: Data?
+    @Published var videoData: Data?
     
     var canUpload: Bool {
         !exercise.title.isEmpty &&
@@ -54,14 +53,14 @@ class CreateExerciseViewModel: ObservableObject {
     }
     
     func uploadExercise() async {
-        guard let videoData = videoData else { return }
+        guard let uploadData = videoData else { return }
         isUploading = true
         
         do {
             // 1. Upload video to Firebase Storage
             let videoFileName = "\(UUID().uuidString).mp4"
             let videoRef = Storage.storage().reference().child("videos/\(videoFileName)")
-            _ = try await videoRef.putDataAsync(videoData)
+            _ = try await videoRef.putDataAsync(uploadData)
             let videoUrl = try await videoRef.downloadURL().absoluteString
             
             // 2. Upload thumbnail
