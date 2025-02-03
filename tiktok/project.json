@@ -1,7 +1,7 @@
 {
     "name": "tiktok",
     "options": {
-        "bundleIdPrefix": "com.example",
+        "bundleIdPrefix": "com.wilbertfeldman.tiktok",
         "deploymentTarget": {
             "iOS": "16.0"
         }
@@ -27,8 +27,10 @@
             "settings": {
                 "base": {
                     "INFOPLIST_FILE": "tiktok/Info.plist",
-                    "PRODUCT_BUNDLE_IDENTIFIER": "com.example.tiktok",
-                    "ENABLE_BITCODE": "NO"
+                    "PRODUCT_BUNDLE_IDENTIFIER": "com.wilbertfeldman.tiktok.tiktok",
+                    "ENABLE_BITCODE": "NO",
+                    "CODE_SIGN_STYLE": "Automatic",
+                    "DEVELOPMENT_TEAM": "C37P58LT2V"
                 }
             },
             "dependencies": [
