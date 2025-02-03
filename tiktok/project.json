@@ -1,0 +1,99 @@
+{
+    "name": "tiktok",
+    "options": {
+        "bundleIdPrefix": "com.example",
+        "deploymentTarget": {
+            "iOS": "16.0"
+        }
+    },
+    "packages": {
+        "Firebase": {
+            "url": "https://github.com/firebase/firebase-ios-sdk.git",
+            "exactVersion": "10.19.1"
+        }
+    },
+    "targets": {
+        "tiktok": {
+            "type": "application",
+            "platform": "iOS",
+            "sources": [
+                {
+                    "path": "tiktok",
+                    "excludes": [
+                        "*.entitlements"
+                    ]
+                }
+            ],
+            "settings": {
+                "base": {
+                    "INFOPLIST_FILE": "tiktok/Info.plist",
+                    "PRODUCT_BUNDLE_IDENTIFIER": "com.example.tiktok",
+                    "ENABLE_BITCODE": "NO"
+                }
+            },
+            "dependencies": [
+                {
+                    "package": "Firebase",
+                    "product": "FirebaseStorage"
+                },
+                {
+                    "package": "Firebase",
+                    "product": "FirebaseFirestore"
+                },
+                {
+                    "package": "Firebase",
+                    "product": "FirebaseAuth"
+                }
+            ],
+            "info": {
+                "path": "tiktok/Info.plist",
+                "properties": {
+                    "NSPhotoLibraryUsageDescription": "Access to your photo library is needed to select exercise videos for upload.",
+                    "NSCameraUsageDescription": "Camera access is needed to record exercise videos.",
+                    "NSMicrophoneUsageDescription": "Microphone access is needed to record audio for your exercise videos.",
+                    "NSPhotoLibraryAddUsageDescription": "We need permission to save edited videos to your photo library.",
+                    "UILaunchStoryboardName": "LaunchScreen",
+                    "UIApplicationSceneManifest": {
+                        "UIApplicationSupportsMultipleScenes": false,
+                        "UISceneConfigurations": {
+                            "UIWindowSceneSessionRoleApplication": [
+                                {
+                                    "UISceneConfigurationName": "Default Configuration",
+                                    "UISceneDelegateClassName": "$(PRODUCT_MODULE_NAME).SceneDelegate"
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "tiktokTests": {
+            "type": "bundle.unit-test",
+            "platform": "iOS",
+            "sources": [
+                {
+                    "path": "tiktokTests"
+                }
+            ],
+            "dependencies": [
+                {
+                    "target": "tiktok"
+                }
+            ]
+        },
+        "tiktokUITests": {
+            "type": "bundle.ui-testing",
+            "platform": "iOS",
+            "sources": [
+                {
+                    "path": "tiktokUITests"
+                }
+            ],
+            "dependencies": [
+                {
+                    "target": "tiktok"
+                }
+            ]
+        }
+    }
+}
