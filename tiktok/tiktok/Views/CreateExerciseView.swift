@@ -15,135 +15,176 @@ struct CreateExerciseView: View {
   ]
 
   var body: some View {
-    NavigationView {
-      Form {
-        Section("Video") {
-          ZStack {
-            if let videoPreview = viewModel.videoThumbnail {
-              Image(uiImage: videoPreview)
-                .resizable()
-                .scaledToFit()
-                .frame(height: 200)
-                .transition(.opacity)
-            }
-
-            if isChangingVideo {
-              HStack {
-                Spacer()
-                ProgressView()
-                  .progressViewStyle(CircularProgressViewStyle())
+    NavigationStack {
+      ScrollView {
+        VStack(spacing: 20) {
+          GroupBox(label: Text("Video").bold()) {
+            ZStack {
+              if isChangingVideo {
+                Rectangle()
+                  .fill(Color.black.opacity(0.3))
+                  .frame(maxWidth: .infinity)
                   .frame(height: 200)
-                Spacer()
+                  .overlay(
+                    ProgressView()
+                      .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                  )
+                  .transition(.opacity)
+              } else if let videoPreview = viewModel.videoThumbnail {
+                Image(uiImage: videoPreview)
+                  .resizable()
+                  .aspectRatio(contentMode: .fit)
+                  .frame(maxWidth: .infinity)
+                  .frame(height: 200)
+                  .clipped()
+                  .transition(.opacity)
+              } else {
+                Rectangle()
+                  .fill(Color.gray.opacity(0.2))
+                  .frame(maxWidth: .infinity)
+                  .frame(height: 200)
+                  .overlay(
+                    Text("No video selected")
+                      .foregroundColor(.gray)
+                  )
               }
-              .transition(.opacity)
             }
+            .animation(.easeInOut, value: isChangingVideo)
+            .animation(.easeInOut, value: viewModel.videoThumbnail)
           }
-          .animation(.easeInOut, value: isChangingVideo)
-          .animation(.easeInOut, value: viewModel.videoThumbnail)
-        }
+          .padding(.horizontal)
 
-        Section("Record or Select Video") {
-          Button(action: { viewModel.showCamera = true }) {
-            HStack {
-              Image(systemName: "camera")
-                .frame(width: 24, height: 24)
-              Text(viewModel.videoThumbnail == nil ? "Record New Video" : "Record Different Video")
-              Spacer()
-              Image(systemName: "chevron.right")
-                .foregroundColor(.gray)
-            }
-          }
-          .buttonStyle(BorderlessButtonStyle())
-
-          PhotosPicker(
-            selection: $selectedItem,
-            matching: .videos
-          ) {
-            HStack {
-              Image(systemName: "photo.on.rectangle")
-                .frame(width: 24, height: 24)
-              Text(
-                viewModel.videoThumbnail == nil ? "Select from Library" : "Choose Different Video")
-              Spacer()
-              Image(systemName: "chevron.right")
-                .foregroundColor(.gray)
-            }
-          }
-          .onChange(of: selectedItem) { newValue in
-            if let item = newValue {
-              withAnimation {
-                isChangingVideo = true
-                viewModel.videoThumbnail = nil
-              }
-
-              Task {
-                await viewModel.loadVideo(from: item)
-                withAnimation {
-                  isChangingVideo = false
+          GroupBox(label: Text("Record or Select Video").bold()) {
+            VStack(spacing: 12) {
+              Button(action: { viewModel.showCamera = true }) {
+                HStack {
+                  Image(systemName: "camera")
+                    .frame(width: 24, height: 24)
+                  Text(
+                    viewModel.videoThumbnail == nil ? "Record New Video" : "Record Different Video")
+                  Spacer()
+                  Image(systemName: "chevron.right")
+                    .foregroundColor(.gray)
                 }
-                selectedItem = nil
+              }
+              .padding(.vertical, 8)
+
+              Divider()
+
+              PhotosPicker(
+                selection: $selectedItem,
+                matching: .videos
+              ) {
+                HStack {
+                  Image(systemName: "photo.on.rectangle")
+                    .frame(width: 24, height: 24)
+                  Text(
+                    viewModel.videoThumbnail == nil
+                      ? "Select from Library" : "Choose Different Video")
+                  Spacer()
+                  Image(systemName: "chevron.right")
+                    .foregroundColor(.gray)
+                }
+              }
+              .onChange(of: selectedItem) { newValue in
+                if let item = newValue {
+                  withAnimation {
+                    isChangingVideo = true
+                    viewModel.videoThumbnail = nil
+                  }
+
+                  Task {
+                    await viewModel.loadVideo(from: item)
+                    withAnimation {
+                      isChangingVideo = false
+                    }
+                    selectedItem = nil
+                  }
+                }
+              }
+              .padding(.vertical, 8)
+            }
+          }
+          .padding(.horizontal)
+
+          GroupBox(label: Text("Details").bold()) {
+            VStack(spacing: 12) {
+              TextField("Title", text: $viewModel.exercise.title)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+
+              TextField("Description", text: $viewModel.exercise.description, axis: .vertical)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .lineLimit(3...6)
+
+              Picker("Difficulty", selection: $viewModel.exercise.difficulty) {
+                ForEach(Difficulty.allCases, id: \.self) { difficulty in
+                  Text(difficulty.rawValue.capitalized)
+                }
               }
             }
           }
-        }
+          .padding(.horizontal)
 
-        Section("Details") {
-          TextField("Title", text: $viewModel.exercise.title)
-          TextField("Description", text: $viewModel.exercise.description, axis: .vertical)
-          Picker("Difficulty", selection: $viewModel.exercise.difficulty) {
-            ForEach(Difficulty.allCases, id: \.self) { difficulty in
-              Text(difficulty.rawValue.capitalized)
+          GroupBox(label: Text("Target Muscles").bold()) {
+            Button(action: { showingMuscleSelector = true }) {
+              HStack {
+                Text("Select Muscles")
+                Spacer()
+                Text("\(viewModel.exercise.targetMuscles.count) selected")
+                  .foregroundColor(.gray)
+              }
+              .padding(.vertical, 8)
             }
           }
-        }
+          .padding(.horizontal)
 
-        Section("Target Muscles") {
-          Button(action: { showingMuscleSelector = true }) {
-            HStack {
-              Text("Select Muscles")
-              Spacer()
-              Text("\(viewModel.exercise.targetMuscles.count) selected")
-                .foregroundColor(.gray)
+          GroupBox(label: Text("Exercise Specifics").bold()) {
+            VStack(spacing: 12) {
+              HStack {
+                Text("Duration")
+                Spacer()
+                TextField("Seconds", value: $viewModel.exercise.duration, format: .number)
+                  .keyboardType(.numberPad)
+                  .multilineTextAlignment(.trailing)
+                  .frame(width: 100)
+                  .textFieldStyle(RoundedBorderTextFieldStyle())
+              }
+
+              HStack {
+                Text("Sets")
+                Spacer()
+                TextField("Optional", value: $viewModel.exercise.sets, format: .number)
+                  .keyboardType(.numberPad)
+                  .multilineTextAlignment(.trailing)
+                  .frame(width: 100)
+                  .textFieldStyle(RoundedBorderTextFieldStyle())
+              }
+
+              HStack {
+                Text("Reps")
+                Spacer()
+                TextField("Optional", value: $viewModel.exercise.reps, format: .number)
+                  .keyboardType(.numberPad)
+                  .multilineTextAlignment(.trailing)
+                  .frame(width: 100)
+                  .textFieldStyle(RoundedBorderTextFieldStyle())
+              }
             }
           }
-        }
+          .padding(.horizontal)
 
-        Section("Exercise Specifics") {
-          HStack {
-            Text("Duration")
-            Spacer()
-            TextField("Seconds", value: $viewModel.exercise.duration, format: .number)
-              .keyboardType(.numberPad)
-              .multilineTextAlignment(.trailing)
-          }
-
-          HStack {
-            Text("Sets")
-            Spacer()
-            TextField("Optional", value: $viewModel.exercise.sets, format: .number)
-              .keyboardType(.numberPad)
-              .multilineTextAlignment(.trailing)
-          }
-
-          HStack {
-            Text("Reps")
-            Spacer()
-            TextField("Optional", value: $viewModel.exercise.reps, format: .number)
-              .keyboardType(.numberPad)
-              .multilineTextAlignment(.trailing)
-          }
-        }
-
-        Section {
           Button(action: { Task { await viewModel.uploadExercise() } }) {
-            HStack {
-              Spacer()
-              Text("Upload Exercise")
-              Spacer()
-            }
+            Text("Upload Exercise")
+              .frame(maxWidth: .infinity)
+              .padding()
+              .background(viewModel.canUpload ? Color.blue : Color.gray)
+              .foregroundColor(.white)
+              .cornerRadius(10)
           }
           .disabled(!viewModel.canUpload)
+          .padding(.horizontal)
         }
+        .padding(.vertical)
       }
       .navigationTitle("Create Exercise")
       .sheet(isPresented: $showingMuscleSelector) {
