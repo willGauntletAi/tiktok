@@ -1,0 +1,3 @@
+# Deploy Firestore indexes
+deploy-indexes:
+    firebase deploy --only firestore:indexes 
