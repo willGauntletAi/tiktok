@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct FindVideoView<T: Identifiable>: View where T.ID: Hashable {
+struct FindVideoView<T: Identifiable & EmptyInitializable>: View where T.ID: Hashable {
   @StateObject private var viewModel: FindVideoViewModel<T>
   @FocusState private var focusedField: Field?
   var onItemSelected: ((T) -> Void)?

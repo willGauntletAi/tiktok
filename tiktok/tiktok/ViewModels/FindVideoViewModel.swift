@@ -2,8 +2,15 @@ import FirebaseAuth
 import FirebaseFirestore
 import Foundation
 
+protocol EmptyInitializable {
+    static func empty() -> Self
+}
+
+extension Exercise: EmptyInitializable {}
+extension Workout: EmptyInitializable {}
+
 @MainActor
-class FindVideoViewModel<T: Identifiable>: ObservableObject {
+class FindVideoViewModel<T: Identifiable & EmptyInitializable>: ObservableObject {
   @Published var instructorEmail = ""
   @Published var searchText = ""
   @Published var items: [T] = []
@@ -88,23 +95,23 @@ class FindVideoViewModel<T: Identifiable>: ObservableObject {
             duration: data["duration"] as? Int ?? 0,
             createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
             updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
-          ) as? T
+          ) as? T ?? T.empty()
         } else {
           return Workout(
             id: doc.documentID,
-            type: data["type"] as? String ?? "",
             title: data["title"] as? String ?? "",
             description: data["description"] as? String ?? "",
+            exercises: [],
             instructorId: data["instructorId"] as? String ?? "",
             videoUrl: data["videoUrl"] as? String ?? "",
             thumbnailUrl: data["thumbnailUrl"] as? String ?? "",
-            difficulty: Difficulty(rawValue: data["difficulty"] as? String ?? "") ?? .beginner,
+            difficulty: data["difficulty"] as? String ?? "beginner",
             targetMuscles: data["targetMuscles"] as? [String] ?? [],
-            exercises: data["exercises"] as? [String] ?? [],
             totalDuration: data["totalDuration"] as? Int ?? 0,
+            type: data["type"] as? String ?? "workout",
             createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
             updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
-          ) as? T
+          ) as? T ?? T.empty()
         }
       }
     } catch {

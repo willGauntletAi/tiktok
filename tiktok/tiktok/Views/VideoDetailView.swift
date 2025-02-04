@@ -8,6 +8,8 @@ struct VideoDetailView<T>: View {
   @State private var isExpanded = false
   @State private var firstLineDescription: String = ""
   @State private var fullDescription: String = ""
+  @State private var showExerciseCompletion = false
+  @GestureState private var dragOffset: CGFloat = 0
 
   var body: some View {
     GeometryReader { geometry in
@@ -57,8 +59,8 @@ struct VideoDetailView<T>: View {
             VStack(alignment: .leading, spacing: 12) {
               DetailRow(
                 title: "Difficulty",
-                value: ((item as? Exercise)?.difficulty ?? (item as? Workout)?.difficulty)?.rawValue
-                  .capitalized ?? "")
+                value: ((item as? Exercise)?.difficulty.rawValue ?? (item as? Workout)?.difficulty) ?? "beginner"
+                  .capitalized)
 
               DetailRow(
                 title: "Target Muscles",
@@ -88,7 +90,33 @@ struct VideoDetailView<T>: View {
             isExpanded.toggle()
           }
         }
+
+        // Swipe indicator for exercises
+        if item is Exercise {
+          HStack {
+            Spacer()
+            RoundedRectangle(cornerRadius: 2)
+              .fill(Color.white.opacity(0.5))
+              .frame(width: 4, height: 50)
+              .padding(.trailing)
+          }
+          .frame(maxHeight: .infinity)
+        }
       }
+      .offset(x: dragOffset)
+      .gesture(
+        DragGesture()
+          .updating($dragOffset) { value, state, _ in
+            if item is Exercise {
+              state = max(-50, min(0, value.translation.width))
+            }
+          }
+          .onEnded { value in
+            if item is Exercise && value.translation.width < -50 {
+              showExerciseCompletion = true
+            }
+          }
+      )
     }
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
@@ -101,6 +129,16 @@ struct VideoDetailView<T>: View {
         firstLineDescription = description
       }
     }
+    .background(
+      NavigationLink(
+        destination: item is Exercise
+          ? ExerciseCompletionView(exercise: item as! Exercise)
+          : nil,
+        isActive: $showExerciseCompletion
+      ) {
+        EmptyView()
+      }
+    )
   }
 }
 

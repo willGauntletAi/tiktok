@@ -125,7 +125,7 @@ class CreateWorkoutViewModel: ObservableObject {
         // 3. Create workout document
         workout.type = "workout"
         workout.instructorId = userId
-        workout.exercises = selectedExercises.map { $0.id }
+        workout.exercises = selectedExercises
         workout.videoUrl = videoUrl
         workout.thumbnailUrl = thumbnailUrl
         workout.createdAt = Date()

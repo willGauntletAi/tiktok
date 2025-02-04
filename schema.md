@@ -39,7 +39,7 @@ erDiagram
     Workout {
         string id PK "extends Video"
         array exercises "exerciseIds with order"
-        int totalDuration "in seconds"
+        timestamp estimatedDuration "optional"
     }
 
     WorkoutPlan {
@@ -57,8 +57,45 @@ erDiagram
         timestamp updatedAt
     }
 
+    ExerciseCompletion {
+        string id PK
+        string exerciseId FK
+        string userId FK
+        int repsCompleted
+        float weight "optional, in lbs"
+        string notes "optional"
+        timestamp completedAt
+    }
+
+    WorkoutCompletion {
+        string id PK
+        string workoutId FK
+        string userId FK
+        array exerciseCompletions "exerciseCompletionIds"
+        timestamp startedAt
+        timestamp finishedAt
+        string notes "optional"
+    }
+
+    WorkoutPlanProgress {
+        string id PK
+        string workoutPlanId FK
+        string userId FK
+        array workoutCompletions "workoutCompletionIds"
+        int currentDay
+        boolean isCompleted
+        timestamp startedAt
+        timestamp completedAt "optional"
+    }
+
     User ||--o{ Video : creates
     User ||--o{ Comment : writes
     User ||--o{ Like : gives
+    User ||--o{ ExerciseCompletion : completes
+    User ||--o{ WorkoutCompletion : completes
+    User ||--o{ WorkoutPlanProgress : follows
     Video ||--o{ Comment : has
     Video ||--o{ Like : receives
+    Exercise ||--o{ ExerciseCompletion : tracked_by
+    Workout ||--o{ WorkoutCompletion : tracked_by
+    WorkoutPlan ||--o{ WorkoutPlanProgress : tracked_by
