@@ -1,5 +1,6 @@
 {
     "lldb.library": "/Applications/Xcode.app/Contents/SharedFrameworks/LLDB.framework/Versions/A/LLDB",
     "lldb.launch.expressions": "native",
-    "sweetpad.build.xcodeWorkspacePath": "tiktok/tiktok.xcodeproj/project.xcworkspace"
+    "sweetpad.build.xcodeWorkspacePath": "tiktok/tiktok.xcodeproj/project.xcworkspace",
+    "sweetpad.system.logLevel": "debug"
 }
