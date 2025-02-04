@@ -5,54 +5,102 @@ struct VideoDetailView<T>: View {
   let item: T
   let type: String
   @State private var player: AVPlayer?
+  @State private var isExpanded = false
+  @State private var firstLineDescription: String = ""
+  @State private var fullDescription: String = ""
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 16) {
+    GeometryReader { geometry in
+      ZStack(alignment: .bottomLeading) {
         // Video Player
         if let videoUrl = URL(
           string: (item as? Exercise)?.videoUrl ?? (item as? Workout)?.videoUrl ?? "")
         {
-          VideoPlayer(player: AVPlayer(url: videoUrl))
-            .frame(height: 250)
+          VStack {
+            Spacer()
+            VideoPlayer(player: player ?? AVPlayer())
+              .frame(width: geometry.size.width, height: geometry.size.height)
+              .aspectRatio(contentMode: .fit)
+              .onAppear {
+                // Initialize player and start playback
+                player = AVPlayer(url: videoUrl)
+                player?.play()
+              }
+              .onDisappear {
+                // Stop and clean up player when view disappears
+                player?.pause()
+                player = nil
+              }
+            Spacer()
+          }
+          .edgesIgnoringSafeArea(.all)
         }
 
-        // Title and Description
+        // Overlay content
         VStack(alignment: .leading, spacing: 8) {
+          // Title
           Text((item as? Exercise)?.title ?? (item as? Workout)?.title ?? "")
             .font(.title2)
             .fontWeight(.bold)
+            .foregroundColor(.white)
+            .shadow(radius: 2)
 
-          Text((item as? Exercise)?.description ?? (item as? Workout)?.description ?? "")
+          // Description
+          Text(isExpanded ? fullDescription : firstLineDescription)
             .font(.body)
-            .foregroundColor(.secondary)
-        }
-        .padding(.horizontal)
+            .foregroundColor(.white)
+            .shadow(radius: 2)
+            .lineLimit(isExpanded ? nil : 1)
 
-        // Details
-        VStack(alignment: .leading, spacing: 12) {
-          DetailRow(
-            title: "Difficulty",
-            value: ((item as? Exercise)?.difficulty ?? (item as? Workout)?.difficulty)?.rawValue
-              .capitalized ?? "")
+          if isExpanded {
+            // Additional details
+            VStack(alignment: .leading, spacing: 12) {
+              DetailRow(
+                title: "Difficulty",
+                value: ((item as? Exercise)?.difficulty ?? (item as? Workout)?.difficulty)?.rawValue
+                  .capitalized ?? "")
 
-          DetailRow(
-            title: "Target Muscles",
-            value: ((item as? Exercise)?.targetMuscles ?? (item as? Workout)?.targetMuscles)?
-              .joined(separator: ", ") ?? "")
+              DetailRow(
+                title: "Target Muscles",
+                value: ((item as? Exercise)?.targetMuscles ?? (item as? Workout)?.targetMuscles)?
+                  .joined(separator: ", ") ?? "")
 
-          if let exercise = item as? Exercise {
-            DetailRow(title: "Duration", value: "\(exercise.duration) seconds")
-          } else if let workout = item as? Workout {
-            DetailRow(title: "Total Duration", value: "\(workout.totalDuration) seconds")
-            DetailRow(title: "Exercises", value: "\(workout.exercises.count)")
+              if let exercise = item as? Exercise {
+                DetailRow(title: "Duration", value: "\(exercise.duration) seconds")
+              } else if let workout = item as? Workout {
+                DetailRow(title: "Total Duration", value: "\(workout.totalDuration) seconds")
+                DetailRow(title: "Exercises", value: "\(workout.exercises.count)")
+              }
+            }
           }
         }
-        .padding(.horizontal)
+        .padding()
+        .background(
+          LinearGradient(
+            gradient: Gradient(colors: [.black.opacity(0.7), .clear]),
+            startPoint: .bottom,
+            endPoint: .top
+          )
+        )
+        .frame(maxWidth: isExpanded ? .infinity : geometry.size.width * 0.8)
+        .onTapGesture {
+          withAnimation(.easeInOut) {
+            isExpanded.toggle()
+          }
+        }
       }
-      .padding(.vertical)
     }
     .navigationBarTitleDisplayMode(.inline)
+    .onAppear {
+      // Set up description text
+      let description = (item as? Exercise)?.description ?? (item as? Workout)?.description ?? ""
+      fullDescription = description
+      if let firstLine = description.components(separatedBy: .newlines).first {
+        firstLineDescription = firstLine
+      } else {
+        firstLineDescription = description
+      }
+    }
   }
 }
 
@@ -64,10 +112,13 @@ struct DetailRow: View {
     VStack(alignment: .leading, spacing: 4) {
       Text(title)
         .font(.subheadline)
-        .foregroundColor(.secondary)
+        .foregroundColor(.white.opacity(0.7))
+        .shadow(radius: 2)
 
       Text(value)
         .font(.body)
+        .foregroundColor(.white)
+        .shadow(radius: 2)
     }
   }
 }
