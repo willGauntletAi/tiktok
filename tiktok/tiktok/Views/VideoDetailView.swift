@@ -59,7 +59,8 @@ struct VideoDetailView<T>: View {
             VStack(alignment: .leading, spacing: 12) {
               DetailRow(
                 title: "Difficulty",
-                value: ((item as? Exercise)?.difficulty.rawValue ?? (item as? Workout)?.difficulty) ?? "beginner"
+                value: ((item as? Exercise)?.difficulty.rawValue ?? (item as? Workout)?.difficulty)
+                  ?? "beginner"
                   .capitalized)
 
               DetailRow(
@@ -130,15 +131,15 @@ struct VideoDetailView<T>: View {
       }
     }
     .background(
-      NavigationLink(
-        destination: item is Exercise
-          ? ExerciseCompletionView(exercise: item as! Exercise)
-          : nil,
-        isActive: $showExerciseCompletion
-      ) {
+      NavigationLink(value: showExerciseCompletion) {
         EmptyView()
       }
     )
+    .navigationDestination(isPresented: $showExerciseCompletion) {
+      if let exercise = item as? Exercise {
+        ExerciseCompletionView(exercise: exercise)
+      }
+    }
   }
 }
 
