@@ -6,12 +6,12 @@ import PhotosUI
 import SwiftUI
 
 @MainActor
-class CreateWorkoutViewModel: ObservableObject {
-  @Published var workout: Workout
-  @Published var selectedExercises: [Exercise] = []
+class CreateWorkoutPlanViewModel: ObservableObject {
+  @Published var workoutPlan: WorkoutPlan
+  @Published var selectedWorkouts: [Workout] = []
   @Published var isLoading = false
   @Published var errorMessage: String?
-  @Published var showExerciseSelector = false
+  @Published var showWorkoutSelector = false
   @Published var videoThumbnail: UIImage?
   @Published var videoData: Data?
   @Published var showCamera = false
@@ -21,37 +21,30 @@ class CreateWorkoutViewModel: ObservableObject {
   private let navigationVM = NavigationViewModel.shared
 
   init() {
-    self.workout = Workout.empty()
+    self.workoutPlan = WorkoutPlan.empty()
   }
 
   var canSave: Bool {
-    !workout.title.isEmpty && !workout.description.isEmpty && !selectedExercises.isEmpty
-      && videoData != nil  // Require video to be selected
+    !workoutPlan.title.isEmpty && !workoutPlan.description.isEmpty && !selectedWorkouts.isEmpty
+      && videoData != nil && workoutPlan.duration > 0
   }
 
-  func addExercise(_ exercise: Exercise) {
-    if !selectedExercises.contains(where: { $0.id == exercise.id }) {
-      selectedExercises.append(exercise)
-      updateTotalDuration()
+  func addWorkout(_ workout: Workout) {
+    if !selectedWorkouts.contains(where: { $0.id == workout.id }) {
+      selectedWorkouts.append(workout)
     }
   }
 
-  func removeExercise(_ exercise: Exercise) {
-    selectedExercises.removeAll { $0.id == exercise.id }
-    updateTotalDuration()
+  func removeWorkout(_ workout: Workout) {
+    selectedWorkouts.removeAll { $0.id == workout.id }
   }
 
-  func removeExercise(at offsets: IndexSet) {
-    selectedExercises.remove(atOffsets: offsets)
-    updateTotalDuration()
+  func removeWorkout(at offsets: IndexSet) {
+    selectedWorkouts.remove(atOffsets: offsets)
   }
 
-  func moveExercise(from source: IndexSet, to destination: Int) {
-    selectedExercises.move(fromOffsets: source, toOffset: destination)
-  }
-
-  private func updateTotalDuration() {
-    workout.totalDuration = selectedExercises.reduce(0) { $0 + $1.duration }
+  func moveWorkout(from source: IndexSet, to destination: Int) {
+    selectedWorkouts.move(fromOffsets: source, toOffset: destination)
   }
 
   func loadVideo(from item: PhotosPickerItem?) async {
@@ -94,7 +87,7 @@ class CreateWorkoutViewModel: ObservableObject {
     }
   }
 
-  func saveWorkout() async {
+  func saveWorkoutPlan() async {
     guard let userId = Auth.auth().currentUser?.uid else {
       errorMessage = "User not authenticated"
       return
@@ -122,23 +115,23 @@ class CreateWorkoutViewModel: ObservableObject {
         _ = try await thumbnailRef.putDataAsync(thumbnailData)
         let thumbnailUrl = try await thumbnailRef.downloadURL().absoluteString
 
-        // 3. Create workout document
-        workout.type = "workout"
-        workout.instructorId = userId
-        workout.exercises = selectedExercises.map { $0.id }
-        workout.videoUrl = videoUrl
-        workout.thumbnailUrl = thumbnailUrl
-        workout.createdAt = Date()
-        workout.updatedAt = Date()
+        // 3. Create workout plan document
+        workoutPlan.type = "workoutPlan"
+        workoutPlan.instructorId = userId
+        workoutPlan.workouts = selectedWorkouts.map { $0.id }
+        workoutPlan.videoUrl = videoUrl
+        workoutPlan.thumbnailUrl = thumbnailUrl
+        workoutPlan.createdAt = Date()
+        workoutPlan.updatedAt = Date()
 
-        let workoutRef = db.collection("videos").document()
-        workout.id = workoutRef.documentID
+        let workoutPlanRef = db.collection("videos").document()
+        workoutPlan.id = workoutPlanRef.documentID
 
-        try await workoutRef.setData(workout.dictionary)
+        try await workoutPlanRef.setData(workoutPlan.dictionary)
 
         // 4. Reset form
-        self.workout = Workout.empty()
-        self.selectedExercises = []
+        self.workoutPlan = WorkoutPlan.empty()
+        self.selectedWorkouts = []
         self.videoData = nil
         self.videoThumbnail = nil
 
@@ -147,9 +140,30 @@ class CreateWorkoutViewModel: ObservableObject {
         self.navigationVM.navigateToProfile()
       }
     } catch {
-      errorMessage = "Failed to save workout: \(error.localizedDescription)"
+      errorMessage = "Failed to save workout plan: \(error.localizedDescription)"
     }
 
     isLoading = false
+  }
+}
+
+// Helper extension for empty workout plan
+extension WorkoutPlan {
+  static func empty() -> WorkoutPlan {
+    WorkoutPlan(
+      id: "",
+      type: "workoutPlan",
+      title: "",
+      description: "",
+      instructorId: "",
+      videoUrl: "",
+      thumbnailUrl: "",
+      difficulty: .beginner,
+      targetMuscles: [],
+      workouts: [],
+      duration: 7,  // Default to 7 days
+      createdAt: Date(),
+      updatedAt: Date()
+    )
   }
 }

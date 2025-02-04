@@ -26,6 +26,15 @@ struct CreateSelectionView: View {
           )
         }
 
+        NavigationLink(destination: CreateWorkoutPlanView()) {
+          CreateOptionCard(
+            title: "Workout Plan",
+            description: "Create a multi-day workout program",
+            systemImage: "calendar.badge.clock",
+            color: .orange
+          )
+        }
+
         Spacer()
       }
       .padding()
