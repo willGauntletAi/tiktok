@@ -4,6 +4,7 @@ import FirebaseFirestore
 import FirebaseStorage
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 @MainActor
 class CreateExerciseViewModel: NSObject, ObservableObject,
@@ -72,32 +73,48 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
   func loadVideo(from item: PhotosPickerItem?) async {
     guard let item = item else { return }
 
+    videoData = nil
+
     do {
-      let movieData = try await item.loadTransferable(type: Data.self)
-      self.videoData = movieData
+      // Start loading video data
+      let dataLoadTask = Task { try await item.loadTransferable(type: Data.self) }
 
-      // Generate thumbnail
-      if let movieData = movieData {
-        let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent(
-          UUID().uuidString + ".mov")
-        try movieData.write(to: tmpURL)
-
-        let asset = AVAsset(url: tmpURL)
-        let imageGenerator = AVAssetImageGenerator(asset: asset)
-        imageGenerator.appliesPreferredTrackTransform = true
-
-        let cgImage = try imageGenerator.copyCGImage(at: .zero, actualTime: nil)
-        self.videoThumbnail = UIImage(cgImage: cgImage)
-
-        // Get video duration
-        let duration = try await asset.load(.duration)
-        self.exercise.duration = Int(duration.seconds)
-
-        try FileManager.default.removeItem(at: tmpURL)
+      guard let data = try await dataLoadTask.value else {
+        throw NSError(
+          domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not load video data"])
       }
+
+      // Store video data first
+      self.videoData = data
+
+      let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+        UUID().uuidString + ".mov")
+      try data.write(to: tmpURL)
+
+      let asset = AVAsset(url: tmpURL)
+
+      // Configure thumbnail generator for faster generation
+      let imageGenerator = AVAssetImageGenerator(asset: asset)
+      imageGenerator.appliesPreferredTrackTransform = true
+      imageGenerator.maximumSize = CGSize(width: 400, height: 400)  // Limit size for faster generation
+      imageGenerator.requestedTimeToleranceBefore = .zero
+      imageGenerator.requestedTimeToleranceAfter = .zero
+
+      // Load duration and generate thumbnail in parallel
+      async let duration = asset.load(.duration)
+      async let cgImage = imageGenerator.copyCGImage(at: .zero, actualTime: nil)
+
+      // Wait for both operations to complete
+      self.exercise.duration = Int(try await duration.seconds)
+      self.videoThumbnail = UIImage(cgImage: try await cgImage)
+
+      try FileManager.default.removeItem(at: tmpURL)
+
     } catch {
       showError = true
       errorMessage = "Failed to load video: \(error.localizedDescription)"
+      videoData = nil
+      videoThumbnail = nil
     }
   }
 
