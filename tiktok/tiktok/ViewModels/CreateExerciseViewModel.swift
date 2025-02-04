@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreImage
+import FirebaseAuth
 import FirebaseFirestore
 import FirebaseStorage
 import PhotosUI
@@ -39,6 +40,12 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
 
   override init() {
     super.init()
+
+    // Set the instructor ID to the current user's ID
+    if let currentUser = Auth.auth().currentUser {
+      exercise.instructorId = currentUser.uid
+    }
+
     recordingDelegate.onFinishRecording = { [weak self] url, error in
       if let error = error {
         Task { @MainActor in
