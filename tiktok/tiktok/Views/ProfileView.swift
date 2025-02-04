@@ -156,8 +156,26 @@ struct VideoGridView: View {
     ScrollView {
       LazyVGrid(columns: columns, spacing: 1) {
         ForEach(videos) { video in
-          VideoThumbnailView(video: video)
-            .frame(height: UIScreen.main.bounds.width / 3)
+          NavigationLink(
+            destination: ExerciseDetailView(
+              exercise: Exercise(
+                id: video.id,
+                type: video.type.rawValue,
+                title: video.title,
+                description: video.description,
+                instructorId: video.instructorId,
+                videoUrl: video.videoUrl,
+                thumbnailUrl: video.thumbnailUrl,
+                difficulty: Difficulty(rawValue: video.difficulty.rawValue) ?? .beginner,
+                targetMuscles: video.targetMuscles,
+                duration: 0,  // Since ProfileViewModel.Video doesn't have duration
+                createdAt: video.createdAt,
+                updatedAt: video.updatedAt
+              ))
+          ) {
+            VideoThumbnailView(video: video)
+              .frame(height: UIScreen.main.bounds.width / 3)
+          }
         }
       }
       .padding(.horizontal, 1)
@@ -169,40 +187,43 @@ struct VideoThumbnailView: View {
   let video: ProfileViewModel.Video
 
   var body: some View {
-    AsyncImage(url: URL(string: video.thumbnailUrl)) { phase in
-      switch phase {
-      case .empty:
-        ZStack {
+    GeometryReader { geometry in
+      AsyncImage(url: URL(string: video.thumbnailUrl)) { phase in
+        switch phase {
+        case .empty:
+          ZStack {
+            Color.gray.opacity(0.2)
+            ProgressView()
+          }
+
+        case .success(let image):
+          image
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(width: geometry.size.width, height: geometry.size.height)
+
+        case .failure:
+          ZStack {
+            Color.gray.opacity(0.2)
+            Image(systemName: "exclamationmark.triangle")
+              .foregroundColor(.gray)
+          }
+
+        @unknown default:
           Color.gray.opacity(0.2)
-          ProgressView()
         }
-
-      case .success(let image):
-        image
-          .resizable()
-          .aspectRatio(contentMode: .fill)
-
-      case .failure:
-        ZStack {
-          Color.gray.opacity(0.2)
-          Image(systemName: "exclamationmark.triangle")
-            .foregroundColor(.gray)
-        }
-
-      @unknown default:
-        Color.gray.opacity(0.2)
       }
-    }
-    .clipped()
-    .overlay(alignment: .bottomLeading) {
-      Text(video.type.rawValue.capitalized)
-        .font(.caption2)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(Color.black.opacity(0.6))
-        .foregroundColor(.white)
-        .cornerRadius(4)
-        .padding(4)
+      .clipped()
+      .overlay(alignment: .bottomLeading) {
+        Text(video.type.rawValue.capitalized)
+          .font(.caption2)
+          .padding(.horizontal, 6)
+          .padding(.vertical, 2)
+          .background(Color.black.opacity(0.6))
+          .foregroundColor(.white)
+          .cornerRadius(4)
+          .padding(4)
+      }
     }
   }
 }
