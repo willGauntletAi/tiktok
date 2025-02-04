@@ -1,10 +1,190 @@
 import SwiftUI
 
 struct ProfileView: View {
-    var body: some View {
-        NavigationView {
-            Text("Profile Coming Soon")
-                .navigationTitle("Profile")
+  @StateObject private var viewModel = ProfileViewModel()
+  @State private var selectedTab = 0
+
+  var body: some View {
+    NavigationView {
+      ScrollView {
+        VStack(spacing: 20) {
+          // Profile Header
+          if let user = viewModel.user {
+            ProfileHeaderView(user: user)
+          }
+
+          // Content Tabs
+          VStack(spacing: 0) {
+            // Tab Buttons
+            HStack(spacing: 0) {
+              TabButton(title: "My Videos", isSelected: selectedTab == 0) {
+                selectedTab = 0
+              }
+              TabButton(title: "Liked", isSelected: selectedTab == 1) {
+                selectedTab = 1
+              }
+            }
+
+            // Tab Content
+            TabView(selection: $selectedTab) {
+              VideoGridView(videos: viewModel.userVideos)
+                .tag(0)
+
+              VideoGridView(videos: viewModel.likedVideos)
+                .tag(1)
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+          }
         }
+        .navigationTitle("Profile")
+        .toolbar {
+          ToolbarItem(placement: .navigationBarTrailing) {
+            Menu {
+              Button(
+                role: .destructive,
+                action: {
+                  viewModel.signOut()
+                }
+              ) {
+                Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
+              }
+            } label: {
+              Image(systemName: "gearshape.fill")
+                .foregroundColor(.primary)
+            }
+          }
+        }
+      }
+      .overlay {
+        if viewModel.isLoading {
+          ProgressView()
+            .scaleEffect(1.5)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black.opacity(0.2))
+        }
+      }
+      .alert("Error", isPresented: .constant(viewModel.error != nil)) {
+        Button("OK") {
+          viewModel.error = nil
+        }
+      } message: {
+        Text(viewModel.error ?? "")
+      }
     }
-} 
+    .task {
+      await viewModel.fetchUserProfile()
+    }
+  }
+}
+
+struct ProfileHeaderView: View {
+  let user: ProfileViewModel.User
+
+  var body: some View {
+    VStack(spacing: 16) {
+      // Profile Image
+      Circle()
+        .fill(Color.gray.opacity(0.2))
+        .frame(width: 100, height: 100)
+        .overlay(
+          Text(String(user.displayName.prefix(1)).uppercased())
+            .font(.system(size: 40, weight: .bold))
+            .foregroundColor(.gray)
+        )
+
+      // User Info
+      VStack(spacing: 8) {
+        Text(user.displayName)
+          .font(.title2)
+          .fontWeight(.bold)
+
+        Text(user.email)
+          .font(.subheadline)
+          .foregroundColor(.gray)
+
+        Text("Member since \(user.createdAt.formatted(.dateTime.month().year()))")
+          .font(.caption)
+          .foregroundColor(.gray)
+      }
+    }
+    .padding()
+  }
+}
+
+struct TabButton: View {
+  let title: String
+  let isSelected: Bool
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      VStack(spacing: 8) {
+        Text(title)
+          .fontWeight(isSelected ? .bold : .regular)
+          .foregroundColor(isSelected ? .primary : .gray)
+
+        Rectangle()
+          .fill(isSelected ? Color.blue : Color.clear)
+          .frame(height: 2)
+      }
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 8)
+  }
+}
+
+struct VideoGridView: View {
+  let videos: [ProfileViewModel.Video]
+  let columns = Array(repeating: GridItem(.flexible(), spacing: 1), count: 3)
+
+  var body: some View {
+    LazyVGrid(columns: columns, spacing: 1) {
+      ForEach(videos) { video in
+        NavigationLink(destination: Text("Video Player Coming Soon")) {
+          VideoThumbnailView(video: video)
+        }
+      }
+    }
+    .padding(.horizontal, 1)
+  }
+}
+
+struct VideoThumbnailView: View {
+  let video: ProfileViewModel.Video
+
+  var body: some View {
+    GeometryReader { geometry in
+      AsyncImage(url: URL(string: video.thumbnailUrl)) { image in
+        image
+          .resizable()
+          .aspectRatio(contentMode: .fill)
+      } placeholder: {
+        Rectangle()
+          .fill(Color.gray.opacity(0.2))
+          .overlay(
+            Image(systemName: "play.fill")
+              .foregroundColor(.gray)
+          )
+      }
+      .frame(width: geometry.size.width, height: geometry.size.width)
+      .clipped()
+      .overlay(alignment: .bottomLeading) {
+        VStack(alignment: .leading) {
+          Text(video.type.rawValue.capitalized)
+            .font(.caption2)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color.black.opacity(0.6))
+            .foregroundColor(.white)
+            .cornerRadius(4)
+        }
+        .padding(4)
+      }
+    }
+    .aspectRatio(1, contentMode: .fit)
+  }
+}
+
+#Preview {
+  ProfileView()
+}
