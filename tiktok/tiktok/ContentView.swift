@@ -17,10 +17,10 @@ struct ContentView: View {
       if authService.isAuthenticated {
         TabView {
           NavigationView {
-            FeedView()
+            SearchView()
           }
           .tabItem {
-            Label("Feed", systemImage: "play.square")
+            Label("Search", systemImage: "magnifyingglass")
           }
 
           NavigationView {
