@@ -20,6 +20,7 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
   @Published var isRecording = false
   @Published var showCamera = false
   @Published var currentFrame: CGImage?
+  @Published var shouldNavigateToProfile = false
 
   // Camera session properties
   var captureSession: AVCaptureSession?
@@ -29,6 +30,7 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
   private var recordingDelegate = VideoRecordingDelegate()
   private var sessionQueue = DispatchQueue(label: "video.preview.session")
   private var addToPreviewStream: ((CGImage) -> Void)?
+  private let navigationVM = NavigationViewModel.shared
 
   lazy var previewStream: AsyncStream<CGImage> = {
     AsyncStream { continuation in
@@ -159,6 +161,10 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
         exercise = Exercise.empty()
         videoData = nil
         videoThumbnail = nil
+
+        // 6. Trigger navigation to profile
+        shouldNavigateToProfile = true
+        navigationVM.navigateToProfile()
       }
     } catch {
       showError = true

@@ -6,6 +6,7 @@ import SwiftUI
 struct CreateWorkoutView: View {
   @StateObject private var viewModel = CreateWorkoutViewModel()
   @FocusState private var focusedField: Field?
+  @Environment(\.presentationMode) var presentationMode
 
   enum Field {
     case title
@@ -168,6 +169,11 @@ struct CreateWorkoutView: View {
     } message: {
       if let error = viewModel.errorMessage {
         Text(error)
+      }
+    }
+    .onChange(of: viewModel.shouldNavigateToProfile) { shouldNavigate in
+      if shouldNavigate {
+        presentationMode.wrappedValue.dismiss()
       }
     }
   }

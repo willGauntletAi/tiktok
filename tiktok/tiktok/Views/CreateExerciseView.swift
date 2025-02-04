@@ -7,6 +7,7 @@ struct CreateExerciseView: View {
   @StateObject private var viewModel = CreateExerciseViewModel()
   @State private var showingMuscleSelector = false
   @FocusState private var focusedField: Field?
+  @Environment(\.presentationMode) var presentationMode
 
   enum Field {
     case title
@@ -104,14 +105,19 @@ struct CreateExerciseView: View {
         .padding(.horizontal)
 
         Button(action: { Task { await viewModel.uploadExercise() } }) {
-          Text("Upload Exercise")
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(viewModel.canUpload ? Color.blue : Color.gray)
-            .foregroundColor(.white)
-            .cornerRadius(10)
+          if viewModel.isUploading {
+            ProgressView()
+              .progressViewStyle(CircularProgressViewStyle(tint: .white))
+          } else {
+            Text("Upload Exercise")
+          }
         }
-        .disabled(!viewModel.canUpload)
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(viewModel.canUpload ? Color.blue : Color.gray)
+        .foregroundColor(.white)
+        .cornerRadius(10)
+        .disabled(!viewModel.canUpload || viewModel.isUploading)
         .padding(.horizontal)
       }
       .padding(.vertical)
@@ -155,13 +161,20 @@ struct CreateExerciseView: View {
       .presentationDetents([.medium])
       .presentationDragIndicator(.visible)
     }
-    .fullScreenCover(isPresented: $viewModel.showCamera) {
+    .sheet(isPresented: $viewModel.showCamera) {
       CameraView(viewModel: viewModel)
     }
     .alert("Error", isPresented: $viewModel.showError) {
-      Button("OK", role: .cancel) {}
+      Button("OK", role: .cancel) {
+        viewModel.showError = false
+      }
     } message: {
       Text(viewModel.errorMessage)
+    }
+    .onChange(of: viewModel.shouldNavigateToProfile) { shouldNavigate in
+      if shouldNavigate {
+        presentationMode.wrappedValue.dismiss()
+      }
     }
     .onTapGesture {
       focusedField = nil
