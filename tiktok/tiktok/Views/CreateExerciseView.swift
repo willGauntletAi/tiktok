@@ -5,9 +5,7 @@ import SwiftUI
 
 struct CreateExerciseView: View {
   @StateObject private var viewModel = CreateExerciseViewModel()
-  @State private var selectedItem: PhotosPickerItem?
   @State private var showingMuscleSelector = false
-  @State private var isChangingVideo = false
   @FocusState private var focusedField: Field?
 
   enum Field {
@@ -26,94 +24,13 @@ struct CreateExerciseView: View {
   var body: some View {
     ScrollView {
       VStack(spacing: 20) {
-        GroupBox(label: Text("Video").bold()) {
-          ZStack {
-            if isChangingVideo {
-              Rectangle()
-                .fill(Color.black.opacity(0.3))
-                .frame(maxWidth: .infinity)
-                .frame(height: 200)
-                .overlay(
-                  ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                )
-                .transition(.opacity)
-            } else if let videoPreview = viewModel.videoThumbnail {
-              Image(uiImage: videoPreview)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(maxWidth: .infinity)
-                .frame(height: 200)
-                .clipped()
-                .transition(.opacity)
-            } else {
-              Rectangle()
-                .fill(Color.gray.opacity(0.2))
-                .frame(maxWidth: .infinity)
-                .frame(height: 200)
-                .overlay(
-                  Text("No video selected")
-                    .foregroundColor(.gray)
-                )
-            }
+        VideoSelectionView(
+          videoThumbnail: $viewModel.videoThumbnail,
+          showCamera: $viewModel.showCamera,
+          onVideoSelected: { item in
+            await viewModel.loadVideo(from: item)
           }
-          .animation(.easeInOut, value: isChangingVideo)
-          .animation(.easeInOut, value: viewModel.videoThumbnail)
-        }
-        .padding(.horizontal)
-
-        GroupBox(label: Text("Record or Select Video").bold()) {
-          VStack(spacing: 12) {
-            Button(action: { viewModel.showCamera = true }) {
-              HStack {
-                Image(systemName: "camera")
-                  .frame(width: 24, height: 24)
-                Text(
-                  viewModel.videoThumbnail == nil ? "Record New Video" : "Record Different Video")
-                Spacer()
-                Image(systemName: "chevron.right")
-                  .foregroundColor(.gray)
-              }
-            }
-            .padding(.vertical, 8)
-
-            Divider()
-
-            PhotosPicker(
-              selection: $selectedItem,
-              matching: .videos
-            ) {
-              HStack {
-                Image(systemName: "photo.on.rectangle")
-                  .frame(width: 24, height: 24)
-                Text(
-                  viewModel.videoThumbnail == nil
-                    ? "Select from Library" : "Choose Different Video")
-                Spacer()
-                Image(systemName: "chevron.right")
-                  .foregroundColor(.gray)
-              }
-            }
-            .onChange(of: selectedItem) { newValue in
-              if let item = newValue {
-                withAnimation {
-                  isChangingVideo = true
-                  viewModel.videoThumbnail = nil
-                }
-
-                Task {
-                  await viewModel.loadVideo(from: item)
-                  withAnimation {
-                    isChangingVideo = false
-                  }
-                  selectedItem = nil
-                }
-              }
-            }
-            .padding(.vertical, 8)
-          }
-        }
-        .padding(.horizontal)
+        )
 
         GroupBox(label: Text("Details").bold()) {
           VStack(spacing: 12) {

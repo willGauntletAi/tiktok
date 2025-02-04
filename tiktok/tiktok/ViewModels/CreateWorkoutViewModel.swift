@@ -1,6 +1,9 @@
+import AVFoundation
 import FirebaseAuth
 import FirebaseFirestore
-import Foundation
+import FirebaseStorage
+import PhotosUI
+import SwiftUI
 
 @MainActor
 class CreateWorkoutViewModel: ObservableObject {
@@ -9,6 +12,9 @@ class CreateWorkoutViewModel: ObservableObject {
   @Published var isLoading = false
   @Published var errorMessage: String?
   @Published var showExerciseSelector = false
+  @Published var videoThumbnail: UIImage?
+  @Published var videoData: Data?
+  @Published var showCamera = false
 
   private let db = Firestore.firestore()
 
@@ -18,7 +24,7 @@ class CreateWorkoutViewModel: ObservableObject {
 
   var canSave: Bool {
     !workout.title.isEmpty && !workout.description.isEmpty && !selectedExercises.isEmpty
-      && workout.difficulty != nil
+      && workout.difficulty != nil && videoData != nil  // Require video to be selected
   }
 
   func addExercise(_ exercise: Exercise) {
@@ -26,6 +32,11 @@ class CreateWorkoutViewModel: ObservableObject {
       selectedExercises.append(exercise)
       updateTotalDuration()
     }
+  }
+
+  func removeExercise(_ exercise: Exercise) {
+    selectedExercises.removeAll { $0.id == exercise.id }
+    updateTotalDuration()
   }
 
   func removeExercise(at offsets: IndexSet) {
@@ -41,9 +52,54 @@ class CreateWorkoutViewModel: ObservableObject {
     workout.totalDuration = selectedExercises.reduce(0) { $0 + $1.duration }
   }
 
+  func loadVideo(from item: PhotosPickerItem?) async {
+    guard let item = item else { return }
+
+    videoData = nil
+
+    do {
+      let dataLoadTask = Task { try await item.loadTransferable(type: Data.self) }
+
+      guard let data = try await dataLoadTask.value else {
+        throw NSError(
+          domain: "", code: -1,
+          userInfo: [NSLocalizedDescriptionKey: "Could not load video data"])
+      }
+
+      self.videoData = data
+
+      let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+        UUID().uuidString + ".mov")
+      try data.write(to: tmpURL)
+
+      let asset = AVAsset(url: tmpURL)
+
+      let imageGenerator = AVAssetImageGenerator(asset: asset)
+      imageGenerator.appliesPreferredTrackTransform = true
+      imageGenerator.maximumSize = CGSize(width: 400, height: 400)
+      imageGenerator.requestedTimeToleranceBefore = .zero
+      imageGenerator.requestedTimeToleranceAfter = .zero
+
+      let cgImage = try imageGenerator.copyCGImage(at: .zero, actualTime: nil)
+      self.videoThumbnail = UIImage(cgImage: cgImage)
+
+      try FileManager.default.removeItem(at: tmpURL)
+
+    } catch {
+      errorMessage = "Failed to load video: \(error.localizedDescription)"
+      videoData = nil
+      videoThumbnail = nil
+    }
+  }
+
   func saveWorkout() async {
     guard let userId = Auth.auth().currentUser?.uid else {
       errorMessage = "User not authenticated"
+      return
+    }
+
+    guard let uploadData = videoData else {
+      errorMessage = "No video selected"
       return
     }
 
@@ -51,22 +107,39 @@ class CreateWorkoutViewModel: ObservableObject {
     errorMessage = nil
 
     do {
-      // Create workout document
-      workout.type = "workout"
-      workout.instructorId = userId
-      workout.exercises = selectedExercises.map { $0.id }
-      workout.createdAt = Date()
-      workout.updatedAt = Date()
+      // 1. Upload video to Firebase Storage
+      let videoFileName = "\(UUID().uuidString).mp4"
+      let videoRef = Storage.storage().reference().child("videos/\(videoFileName)")
+      _ = try await videoRef.putDataAsync(uploadData)
+      let videoUrl = try await videoRef.downloadURL().absoluteString
 
-      let workoutRef = db.collection("videos").document()
-      workout.id = workoutRef.documentID
+      // 2. Upload thumbnail
+      if let thumbnailData = videoThumbnail?.jpegData(compressionQuality: 0.7) {
+        let thumbnailFileName = "\(UUID().uuidString).jpg"
+        let thumbnailRef = Storage.storage().reference().child("thumbnails/\(thumbnailFileName)")
+        _ = try await thumbnailRef.putDataAsync(thumbnailData)
+        let thumbnailUrl = try await thumbnailRef.downloadURL().absoluteString
 
-      try await workoutRef.setData(workout.dictionary)
+        // 3. Create workout document
+        workout.type = "workout"
+        workout.instructorId = userId
+        workout.exercises = selectedExercises.map { $0.id }
+        workout.videoUrl = videoUrl
+        workout.thumbnailUrl = thumbnailUrl
+        workout.createdAt = Date()
+        workout.updatedAt = Date()
 
-      // Reset form
-      self.workout = Workout.empty()
-      self.selectedExercises = []
+        let workoutRef = db.collection("videos").document()
+        workout.id = workoutRef.documentID
 
+        try await workoutRef.setData(workout.dictionary)
+
+        // 4. Reset form
+        self.workout = Workout.empty()
+        self.selectedExercises = []
+        self.videoData = nil
+        self.videoThumbnail = nil
+      }
     } catch {
       errorMessage = "Failed to save workout: \(error.localizedDescription)"
     }

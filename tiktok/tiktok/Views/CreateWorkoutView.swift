@@ -1,3 +1,6 @@
+import FirebaseFirestore
+import FirebaseStorage
+import PhotosUI
 import SwiftUI
 
 struct CreateWorkoutView: View {
@@ -12,6 +15,14 @@ struct CreateWorkoutView: View {
   var body: some View {
     ScrollView {
       VStack(spacing: 20) {
+        VideoSelectionView(
+          videoThumbnail: $viewModel.videoThumbnail,
+          showCamera: $viewModel.showCamera,
+          onVideoSelected: { item in
+            await viewModel.loadVideo(from: item)
+          }
+        )
+
         // Basic Info
         GroupBox(label: Text("Workout Details").bold()) {
           VStack(spacing: 12) {
@@ -85,9 +96,14 @@ struct CreateWorkoutView: View {
                     Image(systemName: "line.3.horizontal")
                       .foregroundColor(.gray)
                   }
+                  .contentShape(Rectangle())
                 }
-                .onMove { viewModel.moveExercise(from: $0, to: $1) }
-                .onDelete { viewModel.removeExercise(at: $0) }
+                .onMove { source, destination in
+                  viewModel.moveExercise(from: source, to: destination)
+                }
+                .onDelete { offsets in
+                  viewModel.removeExercise(at: offsets)
+                }
               }
               .frame(height: CGFloat(viewModel.selectedExercises.count * 60))
               .listStyle(PlainListStyle())
@@ -123,14 +139,26 @@ struct CreateWorkoutView: View {
       }
       .padding(.vertical)
     }
+    .background(
+      Color(.systemBackground)
+        .onTapGesture {
+          focusedField = nil
+        }
+    )
     .navigationTitle("Create Workout")
     .navigationBarTitleDisplayMode(.inline)
     .sheet(isPresented: $viewModel.showExerciseSelector) {
       NavigationView {
-        FindExerciseView(onExerciseSelected: { exercise in
-          viewModel.addExercise(exercise)
-          viewModel.showExerciseSelector = false
-        })
+        FindExerciseView(
+          onExerciseSelected: { exercise in
+            if viewModel.selectedExercises.contains(where: { $0.id == exercise.id }) {
+              viewModel.removeExercise(exercise)
+            } else {
+              viewModel.addExercise(exercise)
+            }
+          },
+          selectedExerciseIds: Set(viewModel.selectedExercises.map { $0.id })
+        )
       }
     }
     .alert("Error", isPresented: .constant(viewModel.errorMessage != nil)) {
@@ -141,9 +169,6 @@ struct CreateWorkoutView: View {
       if let error = viewModel.errorMessage {
         Text(error)
       }
-    }
-    .onTapGesture {
-      focusedField = nil
     }
   }
 }
