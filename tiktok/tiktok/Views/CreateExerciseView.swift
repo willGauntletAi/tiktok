@@ -8,6 +8,15 @@ struct CreateExerciseView: View {
   @State private var selectedItem: PhotosPickerItem?
   @State private var showingMuscleSelector = false
   @State private var isChangingVideo = false
+  @FocusState private var focusedField: Field?
+
+  enum Field {
+    case title
+    case description
+    case duration
+    case sets
+    case reps
+  }
 
   let muscleGroups = [
     "Chest", "Back", "Shoulders", "Biceps", "Triceps",
@@ -111,10 +120,12 @@ struct CreateExerciseView: View {
             VStack(spacing: 12) {
               TextField("Title", text: $viewModel.exercise.title)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
+                .focused($focusedField, equals: .title)
 
               TextField("Description", text: $viewModel.exercise.description, axis: .vertical)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .lineLimit(3...6)
+                .focused($focusedField, equals: .description)
 
               Picker("Difficulty", selection: $viewModel.exercise.difficulty) {
                 ForEach(Difficulty.allCases, id: \.self) { difficulty in
@@ -148,6 +159,7 @@ struct CreateExerciseView: View {
                   .multilineTextAlignment(.trailing)
                   .frame(width: 100)
                   .textFieldStyle(RoundedBorderTextFieldStyle())
+                  .focused($focusedField, equals: .duration)
               }
 
               HStack {
@@ -158,6 +170,7 @@ struct CreateExerciseView: View {
                   .multilineTextAlignment(.trailing)
                   .frame(width: 100)
                   .textFieldStyle(RoundedBorderTextFieldStyle())
+                  .focused($focusedField, equals: .sets)
               }
 
               HStack {
@@ -168,6 +181,7 @@ struct CreateExerciseView: View {
                   .multilineTextAlignment(.trailing)
                   .frame(width: 100)
                   .textFieldStyle(RoundedBorderTextFieldStyle())
+                  .focused($focusedField, equals: .reps)
               }
             }
           }
@@ -185,34 +199,52 @@ struct CreateExerciseView: View {
           .padding(.horizontal)
         }
         .padding(.vertical)
+        .overlay(alignment: .bottom) {
+          if focusedField != nil {
+            KeyboardToolbar {
+              focusedField = nil
+            }
+          }
+        }
       }
       .navigationTitle("Create Exercise")
       .sheet(isPresented: $showingMuscleSelector) {
-        NavigationView {
+        VStack(spacing: 0) {
+          HStack {
+            Text("Select Muscles")
+              .font(.headline)
+            Spacer()
+            Button("Done") {
+              focusedField = nil
+              showingMuscleSelector = false
+            }
+          }
+          .padding()
+          .background(Color(UIColor.systemBackground))
+
           List(muscleGroups, id: \.self) { muscle in
             let isSelected = viewModel.exercise.targetMuscles.contains(muscle)
-            HStack {
-              Text(muscle)
-              Spacer()
-              if isSelected {
-                Image(systemName: "checkmark")
-              }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
+            Button(action: {
               if isSelected {
                 viewModel.exercise.targetMuscles.removeAll { $0 == muscle }
               } else {
                 viewModel.exercise.targetMuscles.append(muscle)
               }
+            }) {
+              HStack {
+                Text(muscle)
+                Spacer()
+                if isSelected {
+                  Image(systemName: "checkmark")
+                    .foregroundColor(.blue)
+                }
+              }
             }
+            .buttonStyle(PlainButtonStyle())
           }
-          .navigationTitle("Select Muscles")
-          .navigationBarItems(
-            trailing: Button("Done") {
-              showingMuscleSelector = false
-            })
         }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
       }
       .fullScreenCover(isPresented: $viewModel.showCamera) {
         CameraView(viewModel: viewModel)
@@ -222,6 +254,35 @@ struct CreateExerciseView: View {
       } message: {
         Text(viewModel.errorMessage)
       }
+      .onTapGesture {
+        focusedField = nil
+      }
     }
+  }
+}
+
+struct KeyboardToolbar: View {
+  var onDone: () -> Void
+
+  var body: some View {
+    VStack {
+      Spacer()
+      HStack {
+        Spacer()
+        Button("Done") {
+          onDone()
+        }
+        .padding(.trailing)
+      }
+      .frame(height: 44)
+      .background(Color(UIColor.systemBackground))
+      .overlay(
+        Rectangle()
+          .frame(height: 0.5)
+          .foregroundColor(Color(UIColor.separator)),
+        alignment: .top
+      )
+    }
+    .edgesIgnoringSafeArea(.bottom)
   }
 }

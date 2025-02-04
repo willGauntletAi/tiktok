@@ -5,36 +5,41 @@
 //  Created by Wilbert Feldman on 2/3/25.
 //
 
-import SwiftUI
+import FirebaseAuth
 import FirebaseCore
+import SwiftUI
 
 struct ContentView: View {
-    var body: some View {
-        TabView {
-            NavigationView {
-                FeedView()
-            }
-            .tabItem {
-                Label("Feed", systemImage: "play.square")
-            }
-            
-            NavigationView {
-                CreateExerciseView()
-            }
-            .tabItem {
-                Label("Create", systemImage: "plus.square")
-            }
-            
-            NavigationView {
-                ProfileView()
-            }
-            .tabItem {
-                Label("Profile", systemImage: "person")
-            }
-        }
-    }
-}
+  @StateObject private var authService = AuthService.shared
 
-#Preview {
-    ContentView()
+  var body: some View {
+    Group {
+      if authService.isAuthenticated {
+        TabView {
+          NavigationView {
+            FeedView()
+          }
+          .tabItem {
+            Label("Feed", systemImage: "play.square")
+          }
+
+          NavigationView {
+            CreateExerciseView()
+          }
+          .tabItem {
+            Label("Create", systemImage: "plus.square")
+          }
+
+          NavigationView {
+            ProfileView()
+          }
+          .tabItem {
+            Label("Profile", systemImage: "person")
+          }
+        }
+      } else {
+        LoginView()
+      }
+    }
+  }
 }

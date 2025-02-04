@@ -119,8 +119,12 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
   }
 
   func uploadExercise() async {
+    // Guard against multiple simultaneous uploads
+    guard !isUploading else { return }
     guard let uploadData = videoData else { return }
+
     isUploading = true
+    defer { isUploading = false }  // Ensure isUploading is set to false when function exits
 
     do {
       // 1. Upload video to Firebase Storage
@@ -153,8 +157,6 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
       showError = true
       errorMessage = "Failed to upload exercise: \(error.localizedDescription)"
     }
-
-    isUploading = false
   }
 
   // MARK: - Camera Setup
