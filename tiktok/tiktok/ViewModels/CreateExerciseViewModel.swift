@@ -294,7 +294,7 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
     }
   }
 
-  func captureOutput(
+  nonisolated func captureOutput(
     _ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
     from connection: AVCaptureConnection
   ) {
