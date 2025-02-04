@@ -26,14 +26,25 @@ struct ProfileView: View {
             }
 
             // Tab Content
-            TabView(selection: $selectedTab) {
-              VideoGridView(videos: viewModel.userVideos)
-                .tag(0)
-
-              VideoGridView(videos: viewModel.likedVideos)
-                .tag(1)
+            if selectedTab == 0 {
+              if viewModel.userVideos.isEmpty {
+                Text("No videos yet")
+                  .foregroundColor(.gray)
+                  .padding()
+              } else {
+                VideoGridView(videos: viewModel.userVideos)
+                  .frame(minHeight: 200)
+              }
+            } else {
+              if viewModel.likedVideos.isEmpty {
+                Text("No liked videos")
+                  .foregroundColor(.gray)
+                  .padding()
+              } else {
+                VideoGridView(videos: viewModel.likedVideos)
+                  .frame(minHeight: 200)
+              }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
           }
         }
         .navigationTitle("Profile")
@@ -135,17 +146,22 @@ struct TabButton: View {
 
 struct VideoGridView: View {
   let videos: [ProfileViewModel.Video]
-  let columns = Array(repeating: GridItem(.flexible(), spacing: 1), count: 3)
+  let columns = [
+    GridItem(.flexible(), spacing: 1),
+    GridItem(.flexible(), spacing: 1),
+    GridItem(.flexible(), spacing: 1),
+  ]
 
   var body: some View {
-    LazyVGrid(columns: columns, spacing: 1) {
-      ForEach(videos) { video in
-        NavigationLink(destination: Text("Video Player Coming Soon")) {
+    ScrollView {
+      LazyVGrid(columns: columns, spacing: 1) {
+        ForEach(videos) { video in
           VideoThumbnailView(video: video)
+            .frame(height: UIScreen.main.bounds.width / 3)
         }
       }
+      .padding(.horizontal, 1)
     }
-    .padding(.horizontal, 1)
   }
 }
 
@@ -153,35 +169,41 @@ struct VideoThumbnailView: View {
   let video: ProfileViewModel.Video
 
   var body: some View {
-    GeometryReader { geometry in
-      AsyncImage(url: URL(string: video.thumbnailUrl)) { image in
+    AsyncImage(url: URL(string: video.thumbnailUrl)) { phase in
+      switch phase {
+      case .empty:
+        ZStack {
+          Color.gray.opacity(0.2)
+          ProgressView()
+        }
+
+      case .success(let image):
         image
           .resizable()
           .aspectRatio(contentMode: .fill)
-      } placeholder: {
-        Rectangle()
-          .fill(Color.gray.opacity(0.2))
-          .overlay(
-            Image(systemName: "play.fill")
-              .foregroundColor(.gray)
-          )
-      }
-      .frame(width: geometry.size.width, height: geometry.size.width)
-      .clipped()
-      .overlay(alignment: .bottomLeading) {
-        VStack(alignment: .leading) {
-          Text(video.type.rawValue.capitalized)
-            .font(.caption2)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Color.black.opacity(0.6))
-            .foregroundColor(.white)
-            .cornerRadius(4)
+
+      case .failure:
+        ZStack {
+          Color.gray.opacity(0.2)
+          Image(systemName: "exclamationmark.triangle")
+            .foregroundColor(.gray)
         }
-        .padding(4)
+
+      @unknown default:
+        Color.gray.opacity(0.2)
       }
     }
-    .aspectRatio(1, contentMode: .fit)
+    .clipped()
+    .overlay(alignment: .bottomLeading) {
+      Text(video.type.rawValue.capitalized)
+        .font(.caption2)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Color.black.opacity(0.6))
+        .foregroundColor(.white)
+        .cornerRadius(4)
+        .padding(4)
+    }
   }
 }
 
