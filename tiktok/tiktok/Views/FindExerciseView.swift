@@ -119,7 +119,7 @@ struct FindExerciseView: View {
                 .padding(.horizontal)
               } else {
                 // Regular view mode
-                NavigationLink(destination: ExerciseDetailView(exercise: exercise)) {
+                NavigationLink(destination: VideoDetailView(item: exercise, type: "exercise")) {
                   ExerciseCard(exercise: exercise)
                     .padding(.horizontal)
                 }

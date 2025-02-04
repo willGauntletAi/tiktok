@@ -90,7 +90,7 @@ struct ExerciseCard: View {
   let exercise: Exercise
 
   var body: some View {
-    NavigationLink(destination: ExerciseDetailView(exercise: exercise)) {
+    NavigationLink(destination: VideoDetailView(item: exercise, type: "exercise")) {
       VStack(alignment: .leading) {
         let thumbnailUrl = exercise.thumbnailUrl
         AsyncImage(url: URL(string: thumbnailUrl)) { image in

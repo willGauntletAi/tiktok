@@ -5,64 +5,62 @@ struct ProfileView: View {
   @State private var selectedTab = 0
 
   var body: some View {
-    NavigationView {
-      ScrollView {
-        VStack(spacing: 20) {
-          // Profile Header
-          if let user = viewModel.user {
-            ProfileHeaderView(user: user)
+    ScrollView {
+      VStack(spacing: 20) {
+        // Profile Header
+        if let user = viewModel.user {
+          ProfileHeaderView(user: user)
+        }
+
+        // Content Tabs
+        VStack(spacing: 0) {
+          // Tab Buttons
+          HStack(spacing: 0) {
+            TabButton(title: "My Videos", isSelected: selectedTab == 0) {
+              selectedTab = 0
+            }
+            TabButton(title: "Liked", isSelected: selectedTab == 1) {
+              selectedTab = 1
+            }
           }
 
-          // Content Tabs
-          VStack(spacing: 0) {
-            // Tab Buttons
-            HStack(spacing: 0) {
-              TabButton(title: "My Videos", isSelected: selectedTab == 0) {
-                selectedTab = 0
-              }
-              TabButton(title: "Liked", isSelected: selectedTab == 1) {
-                selectedTab = 1
-              }
-            }
-
-            // Tab Content
-            if selectedTab == 0 {
-              if viewModel.userVideos.isEmpty {
-                Text("No videos yet")
-                  .foregroundColor(.gray)
-                  .padding()
-              } else {
-                VideoGridView(videos: viewModel.userVideos)
-                  .frame(minHeight: 200)
-              }
+          // Tab Content
+          if selectedTab == 0 {
+            if viewModel.userVideos.isEmpty {
+              Text("No videos yet")
+                .foregroundColor(.gray)
+                .padding()
             } else {
-              if viewModel.likedVideos.isEmpty {
-                Text("No liked videos")
-                  .foregroundColor(.gray)
-                  .padding()
-              } else {
-                VideoGridView(videos: viewModel.likedVideos)
-                  .frame(minHeight: 200)
-              }
+              VideoGridView(videos: viewModel.userVideos)
+                .frame(minHeight: 200)
+            }
+          } else {
+            if viewModel.likedVideos.isEmpty {
+              Text("No liked videos")
+                .foregroundColor(.gray)
+                .padding()
+            } else {
+              VideoGridView(videos: viewModel.likedVideos)
+                .frame(minHeight: 200)
             }
           }
         }
-        .navigationTitle("Profile")
-        .toolbar {
-          ToolbarItem(placement: .navigationBarTrailing) {
-            Menu {
-              Button(
-                role: .destructive,
-                action: {
-                  viewModel.signOut()
-                }
-              ) {
-                Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
+      }
+      .navigationTitle("Profile")
+      .toolbar {
+        ToolbarItem(placement: .navigationBarTrailing) {
+          Menu {
+            Button(
+              role: .destructive,
+              action: {
+                viewModel.signOut()
               }
-            } label: {
-              Image(systemName: "gearshape.fill")
-                .foregroundColor(.primary)
+            ) {
+              Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
             }
+          } label: {
+            Image(systemName: "gearshape.fill")
+              .foregroundColor(.primary)
           }
         }
       }
@@ -157,8 +155,8 @@ struct VideoGridView: View {
       LazyVGrid(columns: columns, spacing: 1) {
         ForEach(videos) { video in
           NavigationLink(
-            destination: ExerciseDetailView(
-              exercise: Exercise(
+            destination: VideoDetailView(
+              item: Exercise(
                 id: video.id,
                 type: video.type.rawValue,
                 title: video.title,
@@ -168,10 +166,12 @@ struct VideoGridView: View {
                 thumbnailUrl: video.thumbnailUrl,
                 difficulty: Difficulty(rawValue: video.difficulty.rawValue) ?? .beginner,
                 targetMuscles: video.targetMuscles,
-                duration: 0,  // Since ProfileViewModel.Video doesn't have duration
+                duration: 0,
                 createdAt: video.createdAt,
                 updatedAt: video.updatedAt
-              ))
+              ),
+              type: "exercise"
+            )
           ) {
             VideoThumbnailView(video: video)
               .frame(height: UIScreen.main.bounds.width / 3)
