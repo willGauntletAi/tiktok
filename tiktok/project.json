@@ -26,7 +26,6 @@
             ],
             "settings": {
                 "base": {
-                    "INFOPLIST_FILE": "tiktok/Info.plist",
                     "PRODUCT_BUNDLE_IDENTIFIER": "com.wilbertfeldman.tiktok.tiktok",
                     "ENABLE_BITCODE": "NO",
                     "CODE_SIGN_STYLE": "Automatic",
@@ -48,8 +47,16 @@
                 }
             ],
             "info": {
-                "path": "tiktok/Info.plist",
+                "path": "Generated/Info.plist",
                 "properties": {
+                    "CFBundleDevelopmentRegion": "$(DEVELOPMENT_LANGUAGE)",
+                    "CFBundleExecutable": "$(EXECUTABLE_NAME)",
+                    "CFBundleIdentifier": "$(PRODUCT_BUNDLE_IDENTIFIER)",
+                    "CFBundleInfoDictionaryVersion": "6.0",
+                    "CFBundleName": "$(PRODUCT_NAME)",
+                    "CFBundlePackageType": "APPL",
+                    "CFBundleShortVersionString": "1.0",
+                    "CFBundleVersion": "1",
                     "NSPhotoLibraryUsageDescription": "Access to your photo library is needed to select exercise videos for upload.",
                     "NSCameraUsageDescription": "Camera access is needed to record exercise videos.",
                     "NSMicrophoneUsageDescription": "Microphone access is needed to record audio for your exercise videos.",
@@ -60,8 +67,7 @@
                         "UISceneConfigurations": {
                             "UIWindowSceneSessionRoleApplication": [
                                 {
-                                    "UISceneConfigurationName": "Default Configuration",
-                                    "UISceneDelegateClassName": "$(PRODUCT_MODULE_NAME).SceneDelegate"
+                                    "UISceneConfigurationName": "Default Configuration"
                                 }
                             ]
                         }
