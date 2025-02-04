@@ -23,12 +23,10 @@ struct ContentView: View {
             Label("Search", systemImage: "magnifyingglass")
           }
 
-          NavigationView {
-            CreateExerciseView()
-          }
-          .tabItem {
-            Label("Create", systemImage: "plus.square")
-          }
+          CreateSelectionView()
+            .tabItem {
+              Label("Create", systemImage: "plus.square")
+            }
 
           NavigationView {
             ProfileView()
