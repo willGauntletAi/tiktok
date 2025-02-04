@@ -81,10 +81,13 @@ struct CameraView: View {
     .onDisappear {
       viewModel.captureSession?.stopRunning()
     }
-    .alert("Camera Error", isPresented: Binding(
-      get: { viewModel.showError },
-      set: { viewModel.showError = $0 }
-    )) {
+    .alert(
+      "Camera Error",
+      isPresented: Binding(
+        get: { viewModel.showError },
+        set: { viewModel.showError = $0 }
+      )
+    ) {
       Button("OK") {
         dismiss()
       }

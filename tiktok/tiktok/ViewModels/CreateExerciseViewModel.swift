@@ -79,7 +79,7 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
       // Generate thumbnail
       if let movieData = movieData {
         let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent(
-          UUID().uuidString)
+          UUID().uuidString + ".mov")
         try movieData.write(to: tmpURL)
 
         let asset = AVAsset(url: tmpURL)
@@ -180,14 +180,18 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
     session.sessionPreset = .high
 
     // Add video input
-    guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+    guard
+      let videoDevice = AVCaptureDevice.default(
+        .builtInWideAngleCamera, for: .video, position: .back)
     else {
-      throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "No video device found"])
+      throw NSError(
+        domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "No video device found"])
     }
 
     let videoInput = try AVCaptureDeviceInput(device: videoDevice)
     guard session.canAddInput(videoInput) else {
-      throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Cannot add video input"])
+      throw NSError(
+        domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Cannot add video input"])
     }
     session.addInput(videoInput)
     deviceInput = videoInput
@@ -209,7 +213,8 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
     videoOutput.alwaysDiscardsLateVideoFrames = true
 
     guard session.canAddOutput(videoOutput) else {
-      throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Cannot add video output"])
+      throw NSError(
+        domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Cannot add video output"])
     }
     session.addOutput(videoOutput)
 
@@ -226,7 +231,8 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
     // Add movie file output for recording
     let movieOutput = AVCaptureMovieFileOutput()
     guard session.canAddOutput(movieOutput) else {
-      throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Cannot add movie output"])
+      throw NSError(
+        domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Cannot add movie output"])
     }
     session.addOutput(movieOutput)
     self.videoOutput = movieOutput
@@ -288,14 +294,17 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
     }
   }
 
-  func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+  func captureOutput(
+    _ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
+    from connection: AVCaptureConnection
+  ) {
     guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-    
+
     let ciImage = CIImage(cvPixelBuffer: imageBuffer)
     let context = CIContext()
-    
+
     guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
-    
+
     Task { @MainActor in
       self.currentFrame = cgImage
     }
