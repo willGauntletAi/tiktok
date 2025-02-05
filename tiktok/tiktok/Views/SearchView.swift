@@ -3,6 +3,7 @@ import SwiftUI
 struct SearchView: View {
   @StateObject private var viewModel = SearchViewModel()
   @State private var selectedItem: (any Identifiable, String)?
+  @State private var searchText = ""
 
   var body: some View {
     VStack(spacing: 0) {
@@ -78,7 +79,7 @@ struct SearchView: View {
       ScrollView {
         LazyVStack(spacing: 15) {
           ForEach(viewModel.exercises) { exercise in
-            NavigationLink(destination: VideoDetailView(item: exercise, type: "exercise")) {
+            NavigationLink(value: SearchDestination.exercise(exercise)) {
               ContentCard(
                 title: exercise.title,
                 description: exercise.description,
@@ -92,7 +93,7 @@ struct SearchView: View {
           }
 
           ForEach(viewModel.workouts) { workout in
-            NavigationLink(destination: VideoDetailView(item: workout, type: "workout")) {
+            NavigationLink(value: SearchDestination.workout(workout)) {
               ContentCard(
                 title: workout.title,
                 description: workout.description,
@@ -106,7 +107,7 @@ struct SearchView: View {
           }
 
           ForEach(viewModel.workoutPlans) { plan in
-            NavigationLink(destination: VideoDetailView(item: plan, type: "workoutPlan")) {
+            NavigationLink(value: SearchDestination.workoutPlan(plan)) {
               ContentCard(
                 title: plan.title,
                 description: plan.description,
@@ -131,6 +132,16 @@ struct SearchView: View {
     }
     .task {
       await viewModel.search()
+    }
+    .navigationDestination(for: SearchDestination.self) { destination in
+      switch destination {
+      case .exercise(let exercise):
+        VideoDetailView(item: exercise, type: "exercise")
+      case .workout(let workout):
+        VideoDetailView(item: workout, type: "workout")
+      case .workoutPlan(let plan):
+        VideoDetailView(item: plan, type: "workoutPlan")
+      }
     }
   }
 }
@@ -232,5 +243,38 @@ struct FilterChipButtonStyle: ButtonStyle {
     configuration.label
       .contentShape(Rectangle())
       .allowsHitTesting(true)
+  }
+}
+
+enum SearchDestination: Hashable {
+  case exercise(Exercise)
+  case workout(Workout)
+  case workoutPlan(WorkoutPlan)
+
+  func hash(into hasher: inout Hasher) {
+    switch self {
+    case .exercise(let exercise):
+      hasher.combine("exercise")
+      hasher.combine(exercise.id)
+    case .workout(let workout):
+      hasher.combine("workout")
+      hasher.combine(workout.id)
+    case .workoutPlan(let plan):
+      hasher.combine("workoutPlan")
+      hasher.combine(plan.id)
+    }
+  }
+
+  static func == (lhs: SearchDestination, rhs: SearchDestination) -> Bool {
+    switch (lhs, rhs) {
+    case (.exercise(let e1), .exercise(let e2)):
+      return e1.id == e2.id
+    case (.workout(let w1), .workout(let w2)):
+      return w1.id == w2.id
+    case (.workoutPlan(let p1), .workoutPlan(let p2)):
+      return p1.id == p2.id
+    default:
+      return false
+    }
   }
 }

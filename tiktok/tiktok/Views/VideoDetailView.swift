@@ -132,12 +132,12 @@ struct VideoDetailView<T>: View {
       }
     }
     .background(
-      NavigationLink(value: showExerciseCompletion) {
+      NavigationLink(value: "exerciseCompletion") {
         EmptyView()
       }
     )
-    .navigationDestination(isPresented: $showExerciseCompletion) {
-      if let exercise = item as? Exercise {
+    .navigationDestination(for: String.self) { value in
+      if value == "exerciseCompletion", let exercise = item as? Exercise {
         ExerciseCompletionView(exercise: exercise)
       }
     }

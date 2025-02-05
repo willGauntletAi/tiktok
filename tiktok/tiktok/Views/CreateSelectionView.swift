@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CreateSelectionView: View {
   var body: some View {
-    NavigationView {
+    NavigationStack {
       VStack(spacing: 24) {
         Text("What would you like to create?")
           .font(.title2)

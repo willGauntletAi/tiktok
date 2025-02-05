@@ -1,8 +1,8 @@
 import SwiftUI
 
-struct ExerciseCard: View {
-  let exercise: Exercise
-  
+struct VideoCard<C: VideoContent>: View {
+  let exercise: C
+
   var body: some View {
     VStack(alignment: .leading) {
       AsyncImage(url: URL(string: exercise.thumbnailUrl)) { image in
@@ -15,16 +15,16 @@ struct ExerciseCard: View {
       }
       .frame(height: 200)
       .cornerRadius(10)
-      
+
       VStack(alignment: .leading, spacing: 4) {
         Text(exercise.title)
           .font(.headline)
-        
+
         Text(exercise.description)
           .font(.subheadline)
           .foregroundColor(.secondary)
           .lineLimit(2)
-        
+
         HStack {
           Text(exercise.difficulty.rawValue.capitalized)
             .font(.caption)
@@ -32,7 +32,7 @@ struct ExerciseCard: View {
             .padding(.vertical, 4)
             .background(Color.blue.opacity(0.2))
             .cornerRadius(8)
-          
+
           ForEach(exercise.targetMuscles.prefix(3), id: \.self) { muscle in
             Text(muscle)
               .font(.caption)
@@ -41,7 +41,7 @@ struct ExerciseCard: View {
               .background(Color.green.opacity(0.2))
               .cornerRadius(8)
           }
-          
+
           if exercise.targetMuscles.count > 3 {
             Text("+\(exercise.targetMuscles.count - 3)")
               .font(.caption)
@@ -58,4 +58,4 @@ struct ExerciseCard: View {
     .cornerRadius(12)
     .shadow(radius: 2)
   }
-} 
+}

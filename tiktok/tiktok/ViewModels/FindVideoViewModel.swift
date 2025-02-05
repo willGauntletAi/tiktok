@@ -10,7 +10,7 @@ extension Exercise: EmptyInitializable {}
 extension Workout: EmptyInitializable {}
 
 @MainActor
-class FindVideoViewModel<T: Identifiable & EmptyInitializable>: ObservableObject {
+class FindVideoViewModel<T: VideoContent>: ObservableObject {
   @Published var instructorEmail = ""
   @Published var searchText = ""
   @Published var items: [T] = []
@@ -54,6 +54,56 @@ class FindVideoViewModel<T: Identifiable & EmptyInitializable>: ObservableObject
     isEmailFocused = false
   }
 
+  func parseExercise(doc: DocumentSnapshot) -> T {
+    let data = doc.data()!
+    return Exercise(
+      id: doc.documentID,
+      type: data["type"] as? String ?? "",
+      title: data["title"] as? String ?? "",
+      description: data["description"] as? String ?? "",
+      instructorId: data["instructorId"] as? String ?? "",
+      videoUrl: data["videoUrl"] as? String ?? "",
+      thumbnailUrl: data["thumbnailUrl"] as? String ?? "",
+      difficulty: Difficulty(rawValue: data["difficulty"] as? String ?? "beginner")
+        ?? .beginner,
+      targetMuscles: data["targetMuscles"] as? [String] ?? [],
+      duration: data["duration"] as? Int ?? 0,
+      createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
+      updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
+    ) as! T
+  }
+
+  func parseWorkout(doc: DocumentSnapshot) -> T {
+    let data = doc.data()!
+    let id = doc.documentID
+    let title = data["title"] as? String ?? ""
+    let description = data["description"] as? String ?? ""
+    let exercises: [Exercise] = []
+    let instructorId = data["instructorId"] as? String ?? ""
+    let videoUrl = data["videoUrl"] as? String ?? ""
+    let thumbnailUrl = data["thumbnailUrl"] as? String ?? ""
+    let difficulty = Difficulty(rawValue: data["difficulty"] as? String ?? "beginner") ?? .beginner
+    let targetMuscles = data["targetMuscles"] as? [String] ?? []
+    let totalDuration = data["totalDuration"] as? Int ?? 0
+    let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
+    let updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
+
+    return Workout(
+      id: id,
+      title: title,
+      description: description,
+      exercises: exercises,
+      instructorId: instructorId,
+      videoUrl: videoUrl,
+      thumbnailUrl: thumbnailUrl,
+      difficulty: difficulty,
+      targetMuscles: targetMuscles,
+      totalDuration: totalDuration,
+      createdAt: createdAt,
+      updatedAt: updatedAt
+    ) as! T
+  }
+
   func search() async {
     isLoading = true
     errorMessage = nil
@@ -81,40 +131,13 @@ class FindVideoViewModel<T: Identifiable & EmptyInitializable>: ObservableObject
 
       items = snapshot.documents.compactMap { doc in
         let data = doc.data()
-        if type == "Exercise" {
-          return Exercise(
-            id: doc.documentID,
-            type: data["type"] as? String ?? "",
-            title: data["title"] as? String ?? "",
-            description: data["description"] as? String ?? "",
-            instructorId: data["instructorId"] as? String ?? "",
-            videoUrl: data["videoUrl"] as? String ?? "",
-            thumbnailUrl: data["thumbnailUrl"] as? String ?? "",
-            difficulty: Difficulty(rawValue: data["difficulty"] as? String ?? "beginner")
-              ?? .beginner,
-            targetMuscles: data["targetMuscles"] as? [String] ?? [],
-            duration: data["duration"] as? Int ?? 0,
-            createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
-            updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
-          ) as? T ?? T.empty()
+        var video: T?
+        if type == "exercise" {
+          video = parseExercise(doc: doc)
         } else {
-          return Workout(
-            id: doc.documentID,
-            title: data["title"] as? String ?? "",
-            description: data["description"] as? String ?? "",
-            exercises: [],
-            instructorId: data["instructorId"] as? String ?? "",
-            videoUrl: data["videoUrl"] as? String ?? "",
-            thumbnailUrl: data["thumbnailUrl"] as? String ?? "",
-            difficulty: Difficulty(rawValue: data["difficulty"] as? String ?? "beginner")
-              ?? .beginner,
-            targetMuscles: data["targetMuscles"] as? [String] ?? [],
-            totalDuration: data["totalDuration"] as? Int ?? 0,
-            type: data["type"] as? String ?? "workout",
-            createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
-            updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
-          ) as? T ?? T.empty()
+          video = parseWorkout(doc: doc)
         }
+        return video
       }
     } catch {
       errorMessage = "Failed to search \(type.lowercased())s: \(error.localizedDescription)"

@@ -1,4 +1,3 @@
-import FirebaseFirestore
 import FirebaseStorage
 import PhotosUI
 import SwiftUI
@@ -149,16 +148,18 @@ struct CreateWorkoutView: View {
     .navigationTitle("Create Workout")
     .navigationBarTitleDisplayMode(.inline)
     .sheet(isPresented: $viewModel.showExerciseSelector) {
-      NavigationView {
-        FindExerciseView(
-          onExerciseSelected: { exercise in
+      NavigationStack {
+        FindVideoView<Exercise>(
+          type: "exercise",
+          title: "Find Exercise",
+          onItemSelected: { exercise in
             if viewModel.selectedExercises.contains(where: { $0.id == exercise.id }) {
               viewModel.removeExercise(exercise)
             } else {
               viewModel.addExercise(exercise)
             }
           },
-          selectedExerciseIds: Set(viewModel.selectedExercises.map { $0.id })
+          selectedIds: Set(viewModel.selectedExercises.map { $0.id })
         )
       }
     }

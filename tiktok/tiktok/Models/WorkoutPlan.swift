@@ -1,9 +1,9 @@
 import FirebaseFirestore
 import Foundation
 
-struct WorkoutPlan: Identifiable, Codable {
+struct WorkoutPlan: VideoContent {
   var id: String
-  var type: String
+  var type: String = "workoutPlan"
   var title: String
   var description: String
   var instructorId: String
@@ -17,7 +17,7 @@ struct WorkoutPlan: Identifiable, Codable {
   var updatedAt: Date
 
   var dictionary: [String: Any] {
-    return [
+    var dict: [String: Any] = [
       "id": id,
       "type": type,
       "title": title,
@@ -27,17 +27,17 @@ struct WorkoutPlan: Identifiable, Codable {
       "thumbnailUrl": thumbnailUrl,
       "difficulty": difficulty.rawValue,
       "targetMuscles": targetMuscles,
-      "workouts": workouts,
-      "duration": duration,
       "createdAt": Timestamp(date: createdAt),
       "updatedAt": Timestamp(date: updatedAt),
     ]
+    dict["workouts"] = workouts
+    dict["duration"] = duration
+    return dict
   }
 
   static func empty() -> WorkoutPlan {
     WorkoutPlan(
       id: UUID().uuidString,
-      type: "workoutPlan",
       title: "",
       description: "",
       instructorId: "",

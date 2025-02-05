@@ -1,8 +1,9 @@
 import FirebaseFirestore
 import Foundation
 
-struct Workout: Identifiable, Codable {
+struct Workout: VideoContent, Hashable {
   var id: String
+  var type: String = "workout"
   var title: String
   var description: String
   var exercises: [Exercise]
@@ -12,7 +13,6 @@ struct Workout: Identifiable, Codable {
   var difficulty: Difficulty
   var targetMuscles: [String]
   var totalDuration: Int
-  var type: String
   var createdAt: Date
   var updatedAt: Date
 
@@ -27,7 +27,6 @@ struct Workout: Identifiable, Codable {
     difficulty: Difficulty,
     targetMuscles: [String],
     totalDuration: Int,
-    type: String,
     createdAt: Date,
     updatedAt: Date
   ) {
@@ -41,7 +40,7 @@ struct Workout: Identifiable, Codable {
     self.difficulty = difficulty
     self.targetMuscles = targetMuscles
     self.totalDuration = totalDuration
-    self.type = type
+    self.type = "workout"
     self.createdAt = createdAt
     self.updatedAt = updatedAt
   }
@@ -57,7 +56,7 @@ struct Workout: Identifiable, Codable {
     self.difficulty = Difficulty(rawValue: data["difficulty"] as? String ?? "beginner") ?? .beginner
     self.targetMuscles = data["targetMuscles"] as? [String] ?? []
     self.totalDuration = data["totalDuration"] as? Int ?? 0
-    self.type = data["type"] as? String ?? "workout"
+    self.type = "workout"
     self.createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
     self.updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
 
@@ -113,14 +112,13 @@ struct Workout: Identifiable, Codable {
       difficulty: .beginner,
       targetMuscles: [],
       totalDuration: 0,
-      type: "workout",
       createdAt: Date(),
       updatedAt: Date()
     )
   }
 
   var dictionary: [String: Any] {
-    [
+    var dict: [String: Any] = [
       "id": id,
       "type": type,
       "title": title,
@@ -130,10 +128,19 @@ struct Workout: Identifiable, Codable {
       "thumbnailUrl": thumbnailUrl,
       "difficulty": difficulty.rawValue,
       "targetMuscles": targetMuscles,
-      "exercises": exercises.map { $0.id },
-      "totalDuration": totalDuration,
       "createdAt": Timestamp(date: createdAt),
       "updatedAt": Timestamp(date: updatedAt),
     ]
+    dict["exercises"] = exercises.map { $0.id }
+    dict["totalDuration"] = totalDuration
+    return dict
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine(id)
+  }
+
+  static func == (lhs: Workout, rhs: Workout) -> Bool {
+    lhs.id == rhs.id
   }
 }

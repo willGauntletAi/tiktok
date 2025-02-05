@@ -1,15 +1,23 @@
 import SwiftUI
 
-struct FindVideoView<T: Identifiable & EmptyInitializable>: View where T.ID: Hashable {
+struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
   @StateObject private var viewModel: FindVideoViewModel<T>
   @FocusState private var focusedField: Field?
-  var onItemSelected: ((T) -> Void)?
-  var selectedIds: Set<String>
-  var type: String
-  var title: String
+  let onItemSelected: ((T) -> Void)?
+  let selectedIds: Set<String>
+  let type: String
+  let title: String
+
+  enum Field {
+    case instructorEmail
+    case title
+  }
 
   init(
-    type: String, title: String, onItemSelected: ((T) -> Void)? = nil, selectedIds: Set<String> = []
+    type: String,
+    title: String,
+    onItemSelected: ((T) -> Void)? = nil,
+    selectedIds: Set<String> = []
   ) {
     self._viewModel = StateObject(wrappedValue: FindVideoViewModel<T>(type: type))
     self.onItemSelected = onItemSelected
@@ -18,19 +26,12 @@ struct FindVideoView<T: Identifiable & EmptyInitializable>: View where T.ID: Has
     self.title = title
   }
 
-  enum Field {
-    case instructorEmail
-    case title
-  }
+  struct SearchSection<C: VideoContent>: View {
+    @ObservedObject var viewModel: FindVideoViewModel<T>
+    @FocusState var focusedField: Field?
+    let type: String
 
-  private func isItemSelected(_ item: T) -> Bool {
-    let idString = String(describing: item.id)
-    return selectedIds.contains(idString)
-  }
-
-  var body: some View {
-    VStack(spacing: 0) {
-      // Search Fields
+    var body: some View {
       VStack(spacing: 16) {
         VStack(alignment: .leading, spacing: 0) {
           TextField("Instructor Email", text: $viewModel.instructorEmail)
@@ -55,10 +56,10 @@ struct FindVideoView<T: Identifiable & EmptyInitializable>: View where T.ID: Has
               }
             }
 
-          // Email Suggestions
           if viewModel.isEmailFocused
             && (!viewModel.instructorEmail.isEmpty || !viewModel.emailSuggestions.isEmpty)
           {
+            // Email Suggestions
             ScrollView {
               VStack(alignment: .leading, spacing: 0) {
                 ForEach(viewModel.emailSuggestions, id: \.self) { email in
@@ -90,21 +91,41 @@ struct FindVideoView<T: Identifiable & EmptyInitializable>: View where T.ID: Has
       }
       .padding()
       .background(Color(.systemBackground))
-      .onSubmit {
-        switch focusedField {
-        case .instructorEmail:
-          focusedField = .title
-        case .title:
-          focusedField = nil
-          Task {
-            await viewModel.search()
+    }
+  }
+
+  struct ResultsList<C: VideoContent>: View {
+    let items: [C]
+    let type: String
+    let selectedIds: Set<String>
+
+    var body: some View {
+      LazyVStack(spacing: 16) {
+        ForEach(items) { item in
+          NavigationLink(value: item) {
+            VideoResultCard(
+              video: item,
+              isSelected: selectedIds.contains(String(describing: item.id)),
+              onToggle: { _ in },
+              addToType: type
+            )
           }
-        case .none:
-          break
+          .buttonStyle(PlainButtonStyle())
         }
       }
+      .padding(.vertical)
+    }
+  }
 
-      // Results
+  var body: some View {
+    VStack(spacing: 0) {
+      SearchSection<T>(
+        viewModel: viewModel,
+        focusedField: _focusedField,
+        type: type
+      )
+
+      // Results Section
       ScrollView {
         if viewModel.isLoading {
           ProgressView()
@@ -118,27 +139,11 @@ struct FindVideoView<T: Identifiable & EmptyInitializable>: View where T.ID: Has
             .foregroundColor(.gray)
             .padding()
         } else {
-          LazyVStack(spacing: 16) {
-            ForEach(viewModel.items) { item in
-              if let onSelect = onItemSelected {
-                // Selection mode
-                VideoResultCard(
-                  item: item,
-                  type: type,
-                  isSelected: isItemSelected(item),
-                  onToggle: onSelect
-                )
-                .padding(.horizontal)
-              } else {
-                // Regular view mode
-                NavigationLink(destination: VideoDetailView(item: item, type: type)) {
-                  VideoCard(item: item, type: type)
-                    .padding(.horizontal)
-                }
-              }
-            }
-          }
-          .padding(.vertical)
+          ResultsList(
+            items: viewModel.items,
+            type: type,
+            selectedIds: selectedIds
+          )
         }
       }
     }
@@ -158,23 +163,26 @@ struct FindVideoView<T: Identifiable & EmptyInitializable>: View where T.ID: Has
     .onAppear {
       viewModel.selectedIds = selectedIds
     }
+    .navigationDestination(for: T.self) { item in
+      VideoDetailView(item: item, type: type)
+    }
   }
 }
 
-struct VideoResultCard<T>: View {
-  let item: T
-  let type: String
+struct VideoResultCard<C: VideoContent>: View {
+  let video: C
   let isSelected: Bool
-  let onToggle: (T) -> Void
+  let onToggle: (C) -> Void
+  let addToType: String
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      VideoCard(item: item, type: type)
+      VideoCard(exercise: video)
 
-      Button(action: { onToggle(item) }) {
+      Button(action: { onToggle(video) }) {
         HStack {
           Image(systemName: isSelected ? "minus.circle.fill" : "plus.circle.fill")
-          Text(isSelected ? "Remove from \(type)" : "Add to \(type)")
+          Text(isSelected ? "Remove from \(addToType)" : "Add to \(addToType)")
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
@@ -187,40 +195,5 @@ struct VideoResultCard<T>: View {
     .background(Color(.systemBackground))
     .cornerRadius(12)
     .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
-  }
-}
-
-struct VideoCard<T>: View {
-  let item: T
-  let type: String
-
-  var body: some View {
-    HStack(spacing: 16) {
-      AsyncImage(
-        url: URL(
-          string: (item as? Exercise)?.thumbnailUrl ?? (item as? Workout)?.thumbnailUrl ?? "")
-      ) { image in
-        image
-          .resizable()
-          .aspectRatio(contentMode: .fill)
-      } placeholder: {
-        Color.gray
-      }
-      .frame(width: 80, height: 80)
-      .cornerRadius(8)
-
-      VStack(alignment: .leading, spacing: 4) {
-        Text((item as? Exercise)?.title ?? (item as? Workout)?.title ?? "")
-          .font(.headline)
-          .lineLimit(2)
-
-        Text((item as? Exercise)?.description ?? (item as? Workout)?.description ?? "")
-          .font(.subheadline)
-          .foregroundColor(.secondary)
-          .lineLimit(2)
-      }
-
-      Spacer()
-    }
   }
 }
