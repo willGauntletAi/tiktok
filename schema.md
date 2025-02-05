@@ -38,7 +38,7 @@ erDiagram
 
     Workout {
         string id PK "extends Video"
-        array exercises "exerciseIds with order"
+        array exercises "array of Exercise objects with matching IDs"
         timestamp estimatedDuration "optional"
     }
 

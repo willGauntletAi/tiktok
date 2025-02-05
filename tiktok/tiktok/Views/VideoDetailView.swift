@@ -10,6 +10,7 @@ struct VideoDetailView<T>: View {
   @State private var firstLineDescription: String = ""
   @State private var fullDescription: String = ""
   @State private var showExerciseCompletion = false
+  @State private var showWorkoutCompletion = false
   @Environment(\.dismiss) private var dismiss
   @Environment(\.presentationMode) var presentationMode
 
@@ -97,8 +98,8 @@ struct VideoDetailView<T>: View {
           }
         }
 
-        // Swipe indicator for exercises
-        if item is Exercise {
+        // Swipe indicator for exercises or workouts
+        if item is Exercise || item is Workout {
           HStack {
             Spacer()
             RoundedRectangle(cornerRadius: 2)
@@ -116,9 +117,13 @@ struct VideoDetailView<T>: View {
             if value.startLocation.x < 50 && value.translation.width > 100 {
               presentationMode.wrappedValue.dismiss()
             }
-            // Handle right edge swipe for exercise completion
-            else if item is Exercise && value.translation.width < -50 {
-              showExerciseCompletion = true
+            // Handle right edge swipe for exercise/workout completion
+            else if value.translation.width < -50 {
+              if item is Exercise {
+                showExerciseCompletion = true
+              } else if item is Workout {
+                showWorkoutCompletion = true
+              }
             }
           }
       )
@@ -136,12 +141,22 @@ struct VideoDetailView<T>: View {
       }
     }
     .background(
-      NavigationLink(isActive: $showExerciseCompletion) {
-        if let exercise = item as? Exercise {
-          ExerciseCompletionView(exercise: exercise)
+      Group {
+        NavigationLink(isActive: $showExerciseCompletion) {
+          if let exercise = item as? Exercise {
+            ExerciseCompletionView(exercise: exercise)
+          }
+        } label: {
+          EmptyView()
         }
-      } label: {
-        EmptyView()
+        
+        NavigationLink(isActive: $showWorkoutCompletion) {
+          if let workout = item as? Workout {
+            WorkoutCompletionView(workout: workout)
+          }
+        } label: {
+          EmptyView()
+        }
       }
     )
   }

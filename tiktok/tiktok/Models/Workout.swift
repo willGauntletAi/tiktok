@@ -131,7 +131,30 @@ struct Workout: VideoContent, Hashable {
       "createdAt": Timestamp(date: createdAt),
       "updatedAt": Timestamp(date: updatedAt),
     ]
-    dict["exercises"] = exercises.map { $0.id }
+    dict["exercises"] = exercises.map { exercise in
+      var exerciseDict =
+        [
+          "id": exercise.id,
+          "type": exercise.type,
+          "title": exercise.title,
+          "description": exercise.description,
+          "instructorId": exercise.instructorId,
+          "videoUrl": exercise.videoUrl,
+          "thumbnailUrl": exercise.thumbnailUrl,
+          "difficulty": exercise.difficulty.rawValue,
+          "targetMuscles": exercise.targetMuscles,
+          "duration": exercise.duration,
+          "createdAt": Timestamp(date: exercise.createdAt),
+          "updatedAt": Timestamp(date: exercise.updatedAt),
+        ] as [String: Any]
+      if let sets = exercise.sets {
+        exerciseDict["sets"] = sets
+      }
+      if let reps = exercise.reps {
+        exerciseDict["reps"] = reps
+      }
+      return exerciseDict
+    }
     dict["totalDuration"] = totalDuration
     return dict
   }

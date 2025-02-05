@@ -125,15 +125,17 @@ struct WorkoutCompletionComponent: View {
         return
       }
 
-      let workoutCompletion = [
-        "workoutId": workout.id,
-        "userId": userId,
-        "exerciseCompletions": [],
-        "startedAt": Timestamp(),
-        "notes": ""
-      ] as [String: Any]
+      let workoutCompletion =
+        [
+          "workoutId": workout.id,
+          "userId": userId,
+          "exerciseCompletions": [],
+          "startedAt": Timestamp(),
+          "notes": "",
+        ] as [String: Any]
 
-      let docRef = try await db.collection("workoutCompletions").addDocument(data: workoutCompletion)
+      let docRef = try await db.collection("workoutCompletions").addDocument(
+        data: workoutCompletion)
       workoutCompletionId = docRef.documentID
       startTime = Date()
       isStarted = true
@@ -171,7 +173,8 @@ struct WorkoutCompletionComponent: View {
           .whereField("workoutCompletionId", isEqualTo: workoutCompletionId)
           .getDocuments()
 
-        let completedExercises = Set(snapshot.documents.map { $0.data()["exerciseId"] as? String ?? "" })
+        let completedExercises = Set(
+          snapshot.documents.map { $0.data()["exerciseId"] as? String ?? "" })
         let allExercises = Set(workout.exercises.map { $0.id })
 
         // If all exercises are completed, finish the workout
