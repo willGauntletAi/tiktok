@@ -95,26 +95,44 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
     }
   }
 
-  struct ResultsList<C: VideoContent>: View {
-    let items: [C]
+  struct ResultsList: View {
+    let items: [T]
     let type: String
     let selectedIds: Set<String>
+    let onToggle: (T) -> Void
+    @State private var selectedItem: T?
+    @State private var isNavigationActive = false
 
     var body: some View {
-      LazyVStack(spacing: 16) {
-        ForEach(items) { item in
-          NavigationLink(value: item) {
+      ZStack {
+        NavigationLink(
+          destination: Group {
+            if let item = selectedItem {
+              VideoDetailView(item: item, type: type)
+            }
+          }, isActive: $isNavigationActive
+        ) {
+          EmptyView()
+        }
+
+        LazyVStack(spacing: 16) {
+          ForEach(items) { item in
             VideoResultCard(
               video: item,
               isSelected: selectedIds.contains(String(describing: item.id)),
-              onToggle: { _ in },
+              onToggle: onToggle,
               addToType: type
             )
+            .contentShape(Rectangle())
+            .onTapGesture {
+              print("Tapped item: \(item.id)")
+              selectedItem = item
+              isNavigationActive = true
+            }
           }
-          .buttonStyle(PlainButtonStyle())
         }
+        .padding(.vertical)
       }
-      .padding(.vertical)
     }
   }
 
@@ -143,7 +161,10 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
           ResultsList(
             items: viewModel.items,
             type: type,
-            selectedIds: selectedIds
+            selectedIds: selectedIds,
+            onToggle: { item in
+              onItemSelected?(item)
+            }
           )
         }
       }
@@ -175,17 +196,19 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
   }
 }
 
-struct VideoResultCard<C: VideoContent>: View {
-  let video: C
+struct VideoResultCard<T: VideoContent>: View {
+  let video: T
   let isSelected: Bool
-  let onToggle: (C) -> Void
+  let onToggle: (T) -> Void
   let addToType: String
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       VideoCard(exercise: video)
 
-      Button(action: { onToggle(video) }) {
+      Button(action: {
+        onToggle(video)
+      }) {
         HStack {
           Image(systemName: isSelected ? "minus.circle.fill" : "plus.circle.fill")
           Text(isSelected ? "Remove from \(addToType)" : "Add to \(addToType)")
@@ -196,6 +219,11 @@ struct VideoResultCard<C: VideoContent>: View {
         .foregroundColor(.white)
         .cornerRadius(8)
       }
+      .buttonStyle(PlainButtonStyle())
+      .simultaneousGesture(
+        TapGesture().onEnded {
+          // Stop event propagation
+        })
     }
     .padding(12)
     .background(Color(.systemBackground))
