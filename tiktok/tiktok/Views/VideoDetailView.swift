@@ -1,5 +1,6 @@
 import AVKit
 import SwiftUI
+import UIKit
 
 struct VideoDetailView<T>: View {
   let item: T
@@ -9,7 +10,8 @@ struct VideoDetailView<T>: View {
   @State private var firstLineDescription: String = ""
   @State private var fullDescription: String = ""
   @State private var showExerciseCompletion = false
-  @GestureState private var dragOffset: CGFloat = 0
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.presentationMode) var presentationMode
 
   var body: some View {
     GeometryReader { geometry in
@@ -40,6 +42,8 @@ struct VideoDetailView<T>: View {
 
         // Overlay content
         VStack(alignment: .leading, spacing: 8) {
+          Spacer()
+
           // Title
           Text((item as? Exercise)?.title ?? (item as? Workout)?.title ?? "")
             .font(.title2)
@@ -105,22 +109,22 @@ struct VideoDetailView<T>: View {
           .frame(maxHeight: .infinity)
         }
       }
-      .offset(x: dragOffset)
       .gesture(
         DragGesture()
-          .updating($dragOffset) { value, state, _ in
-            if item is Exercise {
-              state = max(-50, min(0, value.translation.width))
-            }
-          }
           .onEnded { value in
-            if item is Exercise && value.translation.width < -50 {
+            // Handle left edge swipe for back navigation
+            if value.startLocation.x < 50 && value.translation.width > 100 {
+              presentationMode.wrappedValue.dismiss()
+            }
+            // Handle right edge swipe for exercise completion
+            else if item is Exercise && value.translation.width < -50 {
               showExerciseCompletion = true
             }
           }
       )
     }
-    .navigationBarTitleDisplayMode(.inline)
+    .navigationBarBackButtonHidden(true)
+    .toolbar(.hidden, for: .tabBar)
     .onAppear {
       // Set up description text
       let description = (item as? Exercise)?.description ?? (item as? Workout)?.description ?? ""
@@ -132,15 +136,14 @@ struct VideoDetailView<T>: View {
       }
     }
     .background(
-      NavigationLink(value: "exerciseCompletion") {
+      NavigationLink(isActive: $showExerciseCompletion) {
+        if let exercise = item as? Exercise {
+          ExerciseCompletionView(exercise: exercise)
+        }
+      } label: {
         EmptyView()
       }
     )
-    .navigationDestination(for: String.self) { value in
-      if value == "exerciseCompletion", let exercise = item as? Exercise {
-        ExerciseCompletionView(exercise: exercise)
-      }
-    }
   }
 }
 
