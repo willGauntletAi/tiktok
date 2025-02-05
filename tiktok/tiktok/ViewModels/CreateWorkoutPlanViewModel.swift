@@ -30,6 +30,8 @@ class CreateWorkoutPlanViewModel: ObservableObject {
   @Published var videoData: Data?
   @Published var showCamera = false
   @Published var shouldNavigateToProfile = false
+  @Published var editingWorkoutId: String?
+  @Published var showScheduleEditor = false
 
   private let db = Firestore.firestore()
   private let navigationVM = NavigationViewModel.shared
@@ -44,43 +46,57 @@ class CreateWorkoutPlanViewModel: ObservableObject {
   }
 
   func addWorkout(_ workout: Workout) {
-    // Calculate week number and day of week based on the workout's position
-    let position = selectedWorkouts.count
-    let weekNumber = (position / 7) + 1
-    let dayOfWeek = (position % 7) + 1
-
+    // Always add to week 1, day 1 initially
     selectedWorkouts.append(
-      WorkoutInstance(workout: workout, weekNumber: weekNumber, dayOfWeek: dayOfWeek))
-    updateWorkoutMetadata()
+      WorkoutInstance(workout: workout, weekNumber: 1, dayOfWeek: 1)
+    )
+    sortWorkouts()
+    workoutPlan.workouts = selectedWorkouts.map { $0.workoutWithMeta }
+  }
+
+  func updateWorkoutSchedule(workoutId: String, weekNumber: Int, dayOfWeek: Int) {
+    if let index = selectedWorkouts.firstIndex(where: { $0.id == workoutId }) {
+      selectedWorkouts[index] = WorkoutInstance(
+        workout: selectedWorkouts[index].workoutWithMeta.workout,
+        weekNumber: weekNumber,
+        dayOfWeek: dayOfWeek
+      )
+      sortWorkouts()
+      workoutPlan.workouts = selectedWorkouts.map { $0.workoutWithMeta }
+    }
+  }
+
+  func editWorkoutSchedule(_ workoutId: String) {
+    editingWorkoutId = workoutId
+    showScheduleEditor = true
   }
 
   func removeWorkout(_ workout: Workout) {
     selectedWorkouts.removeAll { $0.workoutWithMeta.workout.id == workout.id }
-    updateWorkoutMetadata()
+    workoutPlan.workouts = selectedWorkouts.map { $0.workoutWithMeta }
   }
 
   func removeWorkout(at offsets: IndexSet) {
     selectedWorkouts.remove(atOffsets: offsets)
-    updateWorkoutMetadata()
+    workoutPlan.workouts = selectedWorkouts.map { $0.workoutWithMeta }
   }
 
   func moveWorkout(from source: IndexSet, to destination: Int) {
     selectedWorkouts.move(fromOffsets: source, toOffset: destination)
-    updateWorkoutMetadata()
+    workoutPlan.workouts = selectedWorkouts.map { $0.workoutWithMeta }
   }
 
-  private func updateWorkoutMetadata() {
-    // Recalculate week numbers and days for all workouts
-    for (index, workoutInstance) in selectedWorkouts.enumerated() {
-      let weekNumber = (index / 7) + 1
-      let dayOfWeek = (index % 7) + 1
-      selectedWorkouts[index] = WorkoutInstance(
-        workout: workoutInstance.workoutWithMeta.workout,
-        weekNumber: weekNumber,
-        dayOfWeek: dayOfWeek
-      )
+  private func sortWorkouts() {
+    selectedWorkouts.sort { first, second in
+      let firstWeek = first.workoutWithMeta.weekNumber
+      let secondWeek = second.workoutWithMeta.weekNumber
+
+      if firstWeek != secondWeek {
+        return firstWeek < secondWeek
+      }
+
+      return first.workoutWithMeta.dayOfWeek < second.workoutWithMeta.dayOfWeek
     }
-    workoutPlan.workouts = selectedWorkouts.map { $0.workoutWithMeta }
   }
 
   func loadVideo(from item: PhotosPickerItem?) async {

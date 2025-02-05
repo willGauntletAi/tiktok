@@ -93,29 +93,39 @@ struct CreateWorkoutPlanView: View {
             .padding(.vertical)
         } else {
           List {
-            ForEach(viewModel.selectedWorkouts) { workoutInstance in
-              HStack {
-                VStack(alignment: .leading) {
-                  Text(workoutInstance.workoutWithMeta.workout.title)
-                    .font(.headline)
+            let groupedWorkouts = Dictionary(grouping: viewModel.selectedWorkouts) {
+              $0.workoutWithMeta.weekNumber
+            }
+            ForEach(groupedWorkouts.keys.sorted(), id: \.self) { week in
+              Section(header: Text("Week \(week)").font(.headline)) {
+                ForEach(groupedWorkouts[week]?.sorted(by: { $0.workoutWithMeta.dayOfWeek < $1.workoutWithMeta.dayOfWeek }) ?? []) { workoutInstance in
                   HStack {
-                    Text(
-                      "Week \(workoutInstance.workoutWithMeta.weekNumber), Day \(workoutInstance.workoutWithMeta.dayOfWeek)"
-                    )
-                    .font(.caption)
-                    .foregroundColor(.blue)
-                    Text("•")
-                      .foregroundColor(.gray)
-                    Text("\(workoutInstance.workoutWithMeta.workout.totalDuration) seconds")
-                      .font(.caption)
+                    VStack(alignment: .leading) {
+                      Text(workoutInstance.workoutWithMeta.workout.title)
+                        .font(.headline)
+                      HStack {
+                        Button(action: {
+                          viewModel.editWorkoutSchedule(workoutInstance.id)
+                        }) {
+                          let dayName = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][workoutInstance.workoutWithMeta.dayOfWeek]
+                          Text(dayName)
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                        }
+                        Text("•")
+                          .foregroundColor(.gray)
+                        Text("\(workoutInstance.workoutWithMeta.workout.totalDuration) seconds")
+                          .font(.caption)
+                          .foregroundColor(.gray)
+                      }
+                    }
+                    Spacer()
+                    Image(systemName: "line.3.horizontal")
                       .foregroundColor(.gray)
                   }
+                  .contentShape(Rectangle())
                 }
-                Spacer()
-                Image(systemName: "line.3.horizontal")
-                  .foregroundColor(.gray)
               }
-              .contentShape(Rectangle())
             }
             .onMove { source, destination in
               viewModel.moveWorkout(from: source, to: destination)
@@ -187,6 +197,25 @@ struct CreateWorkoutPlanView: View {
             actionButtonTitle: { id in
               viewModel.selectedWorkouts.contains { $0.workoutWithMeta.workout.id == id }
                 ? "Add Again" : "Add"
+            }
+          )
+        }
+      }
+      .sheet(isPresented: $viewModel.showScheduleEditor) {
+        if let workoutId = viewModel.editingWorkoutId,
+          let workoutInstance = viewModel.selectedWorkouts.first(where: { $0.id == workoutId })
+        {
+          WorkoutScheduleDialog(
+            workout: workoutInstance.workoutWithMeta.workout,
+            initialWeek: workoutInstance.workoutWithMeta.weekNumber,
+            initialDay: workoutInstance.workoutWithMeta.dayOfWeek,
+            isPresented: $viewModel.showScheduleEditor,
+            onSchedule: { weekNumber, dayOfWeek in
+              viewModel.updateWorkoutSchedule(
+                workoutId: workoutId,
+                weekNumber: weekNumber,
+                dayOfWeek: dayOfWeek
+              )
             }
           )
         }
