@@ -12,12 +12,30 @@ struct WorkoutCompletionComponent: View {
   @State private var showError = false
   @State private var errorMessage = ""
   @State private var workoutCompletionId: String?
+  @State private var exerciseStates: [String: ExerciseState] = [:]
   var onComplete: (() -> Void)?
+
+  struct ExerciseState {
+    var sets: [ExerciseSet]
+    var isLoading: Bool
+    var showError: Bool
+    var errorMessage: String
+  }
 
   init(workout: Workout, onComplete: (() -> Void)? = nil) {
     self.workout = workout
     self.onComplete = onComplete
     self._viewModel = StateObject(wrappedValue: WorkoutCompletionViewModel(workoutId: workout.id))
+    // Initialize exercise states
+    let initialStates = workout.exercises.reduce(into: [:]) { dict, exercise in
+      dict[exercise.id] = ExerciseState(
+        sets: [ExerciseSet(reps: 0, weight: nil, notes: "")],
+        isLoading: false,
+        showError: false,
+        errorMessage: ""
+      )
+    }
+    self._exerciseStates = State(initialValue: initialStates)
   }
 
   var body: some View {
@@ -91,8 +109,34 @@ struct WorkoutCompletionComponent: View {
       if isStarted {
         // Exercise List
         ForEach(workout.exercises, id: \.id) { exercise in
+          let exerciseState =
+            exerciseStates[exercise.id]
+            ?? ExerciseState(
+              sets: [ExerciseSet(reps: 0, weight: nil, notes: "")],
+              isLoading: false,
+              showError: false,
+              errorMessage: ""
+            )
+
           ExerciseCompletionComponent(
             exercise: exercise,
+            viewModel: ExerciseCompletionViewModel(exerciseId: exercise.id),
+            sets: Binding(
+              get: { exerciseState.sets },
+              set: { exerciseStates[exercise.id]?.sets = $0 }
+            ),
+            isLoading: Binding(
+              get: { exerciseState.isLoading },
+              set: { exerciseStates[exercise.id]?.isLoading = $0 }
+            ),
+            showError: Binding(
+              get: { exerciseState.showError },
+              set: { exerciseStates[exercise.id]?.showError = $0 }
+            ),
+            errorMessage: Binding(
+              get: { exerciseState.errorMessage },
+              set: { exerciseStates[exercise.id]?.errorMessage = $0 }
+            ),
             onComplete: {
               // Check if all exercises are completed
               Task {

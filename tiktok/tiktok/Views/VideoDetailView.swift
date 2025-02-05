@@ -92,6 +92,7 @@ struct VideoDetailView<T>: View {
           )
         )
         .frame(maxWidth: isExpanded ? .infinity : geometry.size.width * 0.8)
+        .contentShape(Rectangle())
         .onTapGesture {
           withAnimation(.easeInOut) {
             isExpanded.toggle()
@@ -110,19 +111,23 @@ struct VideoDetailView<T>: View {
           .frame(maxHeight: .infinity)
         }
       }
-      .gesture(
+      .simultaneousGesture(
         DragGesture()
           .onEnded { value in
             // Handle left edge swipe for back navigation
             if value.startLocation.x < 50 && value.translation.width > 100 {
-              presentationMode.wrappedValue.dismiss()
+              dismiss()  // Using dismiss() instead of presentationMode
             }
             // Handle right edge swipe for exercise/workout completion
             else if value.translation.width < -50 {
               if item is Exercise {
-                showExerciseCompletion = true
+                if let exercise = item as? Exercise {
+                  NavigationUtil.navigate(to: ExerciseCompletionView(exercise: exercise))
+                }
               } else if item is Workout {
-                showWorkoutCompletion = true
+                if let workout = item as? Workout {
+                  NavigationUtil.navigate(to: WorkoutCompletionView(workout: workout))
+                }
               }
             }
           }
@@ -140,25 +145,33 @@ struct VideoDetailView<T>: View {
         firstLineDescription = description
       }
     }
-    .background(
-      Group {
-        NavigationLink(isActive: $showExerciseCompletion) {
-          if let exercise = item as? Exercise {
-            ExerciseCompletionView(exercise: exercise)
-          }
-        } label: {
-          EmptyView()
-        }
-        
-        NavigationLink(isActive: $showWorkoutCompletion) {
-          if let workout = item as? Workout {
-            WorkoutCompletionView(workout: workout)
-          }
-        } label: {
-          EmptyView()
-        }
+  }
+}
+
+// Helper for programmatic navigation
+private enum NavigationUtil {
+  static func navigate<V: View>(to view: V) {
+    let window = UIApplication.shared.windows.first { $0.isKeyWindow }
+    if let rootViewController = window?.rootViewController,
+      let navigationController = rootViewController.findNavigationController()
+    {
+      let hostingController = UIHostingController(rootView: view)
+      navigationController.pushViewController(hostingController, animated: true)
+    }
+  }
+}
+
+extension UIViewController {
+  func findNavigationController() -> UINavigationController? {
+    if let nav = self as? UINavigationController {
+      return nav
+    }
+    for child in children {
+      if let nav = child.findNavigationController() {
+        return nav
       }
-    )
+    }
+    return parent?.findNavigationController()
   }
 }
 

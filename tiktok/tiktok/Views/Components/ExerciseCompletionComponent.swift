@@ -5,19 +5,12 @@ import SwiftUI
 
 struct ExerciseCompletionComponent: View {
   let exercise: Exercise
-  @StateObject private var viewModel: ExerciseCompletionViewModel
-  @State private var sets: [ExerciseSet] = [ExerciseSet(reps: 0, weight: nil, notes: "")]
-  @State private var isLoading = false
-  @State private var showError = false
-  @State private var errorMessage = ""
+  let viewModel: ExerciseCompletionViewModel
+  @Binding var sets: [ExerciseSet]
+  @Binding var isLoading: Bool
+  @Binding var showError: Bool
+  @Binding var errorMessage: String
   var onComplete: (() -> Void)?
-
-  init(exercise: Exercise, onComplete: (() -> Void)? = nil) {
-    self.exercise = exercise
-    self.onComplete = onComplete
-    self._viewModel = StateObject(
-      wrappedValue: ExerciseCompletionViewModel(exerciseId: exercise.id))
-  }
 
   var body: some View {
     VStack(spacing: 20) {
@@ -189,68 +182,6 @@ struct ExerciseCompletionComponent: View {
         }
       }
       .padding(.horizontal)
-
-      // Save Button
-      Button(action: {
-        Task {
-          await saveCompletions()
-        }
-      }) {
-        if isLoading {
-          ProgressView()
-            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-        } else {
-          Text("Save Completions")
-        }
-      }
-      .frame(maxWidth: .infinity)
-      .padding()
-      .background(sets.allSatisfy { $0.reps > 0 } ? Color.blue : Color.gray)
-      .foregroundColor(.white)
-      .cornerRadius(10)
-      .disabled(!sets.allSatisfy { $0.reps > 0 } || isLoading)
-      .padding(.horizontal)
-    }
-    .alert("Error", isPresented: $showError) {
-      Button("OK", role: .cancel) {
-        showError = false
-      }
-    } message: {
-      Text(errorMessage)
-    }
-  }
-
-  private func saveCompletions() async {
-    isLoading = true
-    defer { isLoading = false }
-
-    do {
-      let db = Firestore.firestore()
-      guard let userId = Auth.auth().currentUser?.uid else {
-        errorMessage = "User not logged in"
-        showError = true
-        return
-      }
-
-      // Create exercise completions for each set
-      for set in sets {
-        let completion =
-          [
-            "exerciseId": exercise.id,
-            "userId": userId,
-            "repsCompleted": set.reps,
-            "weight": set.weight as Any,
-            "notes": set.notes,
-            "completedAt": Timestamp(),
-          ] as [String: Any]
-
-        try await db.collection("exerciseCompletions").addDocument(data: completion)
-      }
-
-      onComplete?()
-    } catch {
-      errorMessage = error.localizedDescription
-      showError = true
     }
   }
 }
