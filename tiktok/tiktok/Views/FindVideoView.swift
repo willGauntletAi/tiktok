@@ -2,6 +2,7 @@ import SwiftUI
 
 struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
   @StateObject private var viewModel: FindVideoViewModel<T>
+  @StateObject private var authService = AuthService.shared
   @FocusState private var focusedField: Field?
   let onItemSelected: ((T) -> Void)?
   let selectedIds: Set<String>
@@ -63,7 +64,7 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
             ScrollView {
               VStack(alignment: .leading, spacing: 0) {
                 ForEach(viewModel.emailSuggestions, id: \.self) { email in
-                  Button(action: { viewModel.selectEmail(email) }) {
+                  Button(action: { Task { await viewModel.selectEmail(email) } }) {
                     Text(email)
                       .padding(.vertical, 8)
                       .padding(.horizontal, 12)
@@ -162,6 +163,11 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
     }
     .onAppear {
       viewModel.selectedIds = selectedIds
+      if let currentUserEmail = authService.currentUser?.email {
+        Task {
+          await viewModel.selectEmail(currentUserEmail)
+        }
+      }
     }
     .navigationDestination(for: T.self) { item in
       VideoDetailView(item: item, type: type)

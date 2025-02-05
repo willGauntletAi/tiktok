@@ -48,10 +48,11 @@ class FindVideoViewModel<T: VideoContent>: ObservableObject {
     }
   }
 
-  func selectEmail(_ email: String) {
+  func selectEmail(_ email: String) async {
     instructorEmail = email
     emailSuggestions = []
     isEmailFocused = false
+    await search()
   }
 
   func parseExercise(doc: DocumentSnapshot) -> T {
@@ -130,7 +131,6 @@ class FindVideoViewModel<T: VideoContent>: ObservableObject {
       let snapshot = try await query.getDocuments()
 
       items = snapshot.documents.compactMap { doc in
-        let data = doc.data()
         var video: T?
         if type == "exercise" {
           video = parseExercise(doc: doc)

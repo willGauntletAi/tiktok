@@ -21,7 +21,7 @@ class WorkoutCompletionViewModel: ObservableObject {
 
     do {
       let db = Firestore.firestore()
-      var query = db.collection("workoutCompletions")
+      let query = db.collection("workoutCompletions")
         .whereField("workoutId", isEqualTo: workoutId)
         .order(by: "startedAt", descending: true)
         .limit(to: pageSize)
@@ -30,7 +30,6 @@ class WorkoutCompletionViewModel: ObservableObject {
       lastDocument = snapshot.documents.last
 
       recentCompletions = snapshot.documents.compactMap { document in
-        let data = document.data()
         return WorkoutCompletion(document: document)
       }
 
