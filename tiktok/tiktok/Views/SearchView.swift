@@ -2,9 +2,11 @@ import SwiftUI
 
 struct SearchView: View {
   @StateObject private var viewModel = SearchViewModel()
+  @State private var selectedItem: (any Identifiable, String)?
 
   var body: some View {
-    ScrollView {
+    VStack(spacing: 0) {
+      // Filters Section
       VStack(spacing: 16) {
         // Content Type Picker
         Picker("Content Type", selection: $viewModel.selectedContentType) {
@@ -69,8 +71,11 @@ struct SearchView: View {
             .padding(.horizontal)
           }
         }
+      }
+      .padding(.vertical)
 
-        // Results
+      // Results Section
+      ScrollView {
         LazyVStack(spacing: 15) {
           ForEach(viewModel.exercises) { exercise in
             NavigationLink(destination: VideoDetailView(item: exercise, type: "exercise")) {
@@ -116,17 +121,16 @@ struct SearchView: View {
         }
         .padding(.horizontal)
       }
-      .padding(.vertical)
-      .navigationTitle("Search")
-      .navigationBarTitleDisplayMode(.inline)
-      .onChange(of: viewModel.searchText) { _ in
-        Task {
-          await viewModel.search()
-        }
-      }
-      .task {
+    }
+    .navigationTitle("Search")
+    .navigationBarTitleDisplayMode(.inline)
+    .onChange(of: viewModel.searchText) { _ in
+      Task {
         await viewModel.search()
       }
+    }
+    .task {
+      await viewModel.search()
     }
   }
 }
@@ -219,5 +223,14 @@ struct FilterChip: View {
         .foregroundColor(isSelected ? .white : .primary)
         .cornerRadius(20)
     }
+    .buttonStyle(FilterChipButtonStyle())
+  }
+}
+
+struct FilterChipButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .contentShape(Rectangle())
+      .allowsHitTesting(true)
   }
 }

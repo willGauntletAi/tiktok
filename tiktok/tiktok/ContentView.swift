@@ -17,7 +17,7 @@ struct ContentView: View {
     Group {
       if authService.isAuthenticated {
         TabView(selection: $navigationVM.selectedTab) {
-          NavigationView {
+          NavigationStack {
             SearchView()
           }
           .tabItem {
@@ -31,7 +31,7 @@ struct ContentView: View {
             }
             .tag(1)
 
-          NavigationView {
+          NavigationStack {
             ProfileView()
           }
           .tabItem {
