@@ -2,25 +2,144 @@ import AVKit
 import SwiftUI
 import UIKit
 
-struct VideoDetailView<T>: View {
-  let item: T
-  let type: String
+struct VideoDetailView: View {
+  let workoutPlan: WorkoutPlan
+  let workoutIndex: Int?
+  let exerciseIndex: Int?
   @State private var player: AVPlayer?
   @State private var isExpanded = false
   @State private var firstLineDescription: String = ""
   @State private var fullDescription: String = ""
-  @State private var showExerciseCompletion = false
-  @State private var showWorkoutCompletion = false
   @Environment(\.dismiss) private var dismiss
   @Environment(\.presentationMode) var presentationMode
+
+  private var currentWorkout: Workout? {
+    guard let workoutIndex = workoutIndex else { return nil }
+    return workoutPlan.workouts[workoutIndex]
+  }
+
+  private var currentExercise: Exercise? {
+    guard let workoutIndex = workoutIndex,
+      let exerciseIndex = exerciseIndex
+    else { return nil }
+    return workoutPlan.workouts[workoutIndex].exercises[exerciseIndex]
+  }
+
+  private var title: String {
+    if let exercise = currentExercise {
+      return exercise.title
+    } else if let workout = currentWorkout {
+      return workout.title
+    } else {
+      return workoutPlan.title
+    }
+  }
+
+  private var description: String {
+    if let exercise = currentExercise {
+      return exercise.description
+    } else if let workout = currentWorkout {
+      return workout.description
+    } else {
+      return workoutPlan.description
+    }
+  }
+
+  private var videoUrl: String {
+    if let exercise = currentExercise {
+      return exercise.videoUrl
+    } else if let workout = currentWorkout {
+      return workout.videoUrl
+    } else {
+      return workoutPlan.videoUrl
+    }
+  }
+
+  private var difficulty: Difficulty {
+    if let exercise = currentExercise {
+      return exercise.difficulty
+    } else if let workout = currentWorkout {
+      return workout.difficulty
+    } else {
+      return workoutPlan.difficulty
+    }
+  }
+
+  private var targetMuscles: [String] {
+    if let exercise = currentExercise {
+      return exercise.targetMuscles
+    } else if let workout = currentWorkout {
+      return workout.targetMuscles
+    } else {
+      return workoutPlan.targetMuscles
+    }
+  }
+
+  private func navigateToNext() {
+    // If we're viewing the workout plan video
+    if workoutIndex == nil {
+      if !workoutPlan.workouts.isEmpty {
+        NavigationUtil.navigate(
+          to: VideoDetailView(
+            workoutPlan: workoutPlan,
+            workoutIndex: 0,
+            exerciseIndex: nil
+          ))
+      }
+      return
+    }
+
+    // If we're viewing an exercise within a workout
+    if let currentWorkoutIndex = workoutIndex, let currentExerciseIndex = exerciseIndex {
+      let workout = workoutPlan.workouts[currentWorkoutIndex]
+      // If there are more exercises in current workout
+      if currentExerciseIndex + 1 < workout.exercises.count {
+        NavigationUtil.navigate(
+          to: VideoDetailView(
+            workoutPlan: workoutPlan,
+            workoutIndex: currentWorkoutIndex,
+            exerciseIndex: currentExerciseIndex + 1
+          ))
+      }
+      // If we're at last exercise but there are more workouts
+      else if currentWorkoutIndex + 1 < workoutPlan.workouts.count {
+        NavigationUtil.navigate(
+          to: VideoDetailView(
+            workoutPlan: workoutPlan,
+            workoutIndex: currentWorkoutIndex + 1,
+            exerciseIndex: nil
+          ))
+      }
+    }
+    // If we're viewing a workout
+    else if let currentWorkoutIndex = workoutIndex {
+      let workout = workoutPlan.workouts[currentWorkoutIndex]
+      // Navigate to first exercise if available
+      if !workout.exercises.isEmpty {
+        NavigationUtil.navigate(
+          to: VideoDetailView(
+            workoutPlan: workoutPlan,
+            workoutIndex: currentWorkoutIndex,
+            exerciseIndex: 0
+          ))
+      }
+      // Otherwise try to navigate to next workout
+      else if currentWorkoutIndex + 1 < workoutPlan.workouts.count {
+        NavigationUtil.navigate(
+          to: VideoDetailView(
+            workoutPlan: workoutPlan,
+            workoutIndex: currentWorkoutIndex + 1,
+            exerciseIndex: nil
+          ))
+      }
+    }
+  }
 
   var body: some View {
     GeometryReader { geometry in
       ZStack(alignment: .bottomLeading) {
         // Video Player
-        if let videoUrl = URL(
-          string: (item as? Exercise)?.videoUrl ?? (item as? Workout)?.videoUrl ?? "")
-        {
+        if let videoUrl = URL(string: videoUrl) {
           VStack {
             Spacer()
             VideoPlayer(player: player ?? AVPlayer())
@@ -46,7 +165,7 @@ struct VideoDetailView<T>: View {
           Spacer()
 
           // Title
-          Text((item as? Exercise)?.title ?? (item as? Workout)?.title ?? "")
+          Text(title)
             .font(.title2)
             .fontWeight(.bold)
             .foregroundColor(.white)
@@ -64,21 +183,18 @@ struct VideoDetailView<T>: View {
             VStack(alignment: .leading, spacing: 12) {
               DetailRow(
                 title: "Difficulty",
-                value: ((item as? Exercise)?.difficulty.rawValue
-                  ?? (item as? Workout)?.difficulty.rawValue)
-                  ?? "beginner"
-                  .capitalized)
+                value: difficulty.rawValue.capitalized)
 
               DetailRow(
                 title: "Target Muscles",
-                value: ((item as? Exercise)?.targetMuscles ?? (item as? Workout)?.targetMuscles)?
-                  .joined(separator: ", ") ?? "")
+                value: targetMuscles.joined(separator: ", "))
 
-              if let exercise = item as? Exercise {
+              if let exercise = currentExercise {
                 DetailRow(title: "Duration", value: "\(exercise.duration) seconds")
-              } else if let workout = item as? Workout {
-                DetailRow(title: "Total Duration", value: "\(workout.totalDuration) seconds")
-                DetailRow(title: "Exercises", value: "\(workout.exercises.count)")
+              } else {
+                DetailRow(
+                  title: "Total Duration", value: "\(currentWorkout?.totalDuration ?? 0) seconds")
+                DetailRow(title: "Exercises", value: "\(currentWorkout?.exercises.count ?? 0)")
               }
             }
           }
@@ -99,36 +215,26 @@ struct VideoDetailView<T>: View {
           }
         }
 
-        // Swipe indicator for exercises or workouts
-        if item is Exercise || item is Workout {
-          HStack {
-            Spacer()
-            RoundedRectangle(cornerRadius: 2)
-              .fill(Color.white.opacity(0.5))
-              .frame(width: 4, height: 50)
-              .padding(.trailing)
-          }
-          .frame(maxHeight: .infinity)
+        // Swipe indicator
+        HStack {
+          Spacer()
+          RoundedRectangle(cornerRadius: 2)
+            .fill(Color.white.opacity(0.5))
+            .frame(width: 4, height: 50)
+            .padding(.trailing)
         }
+        .frame(maxHeight: .infinity)
       }
       .simultaneousGesture(
         DragGesture()
           .onEnded { value in
             // Handle left edge swipe for back navigation
             if value.startLocation.x < 50 && value.translation.width > 100 {
-              dismiss()  // Using dismiss() instead of presentationMode
+              dismiss()
             }
-            // Handle right edge swipe for exercise/workout completion
+            // Handle right to left swipe for next video
             else if value.translation.width < -50 {
-              if item is Exercise {
-                if let exercise = item as? Exercise {
-                  NavigationUtil.navigate(to: ExerciseCompletionView(exercise: exercise))
-                }
-              } else if item is Workout {
-                if let workout = item as? Workout {
-                  NavigationUtil.navigate(to: WorkoutCompletionView(workout: workout))
-                }
-              }
+              navigateToNext()
             }
           }
       )
@@ -137,7 +243,6 @@ struct VideoDetailView<T>: View {
     .toolbar(.hidden, for: .tabBar)
     .onAppear {
       // Set up description text
-      let description = (item as? Exercise)?.description ?? (item as? Workout)?.description ?? ""
       fullDescription = description
       if let firstLine = description.components(separatedBy: .newlines).first {
         firstLineDescription = firstLine

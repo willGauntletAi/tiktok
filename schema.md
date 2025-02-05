@@ -44,7 +44,7 @@ erDiagram
 
     WorkoutPlan {
         string id PK "extends Video"
-        array workouts "workoutIds with order"
+        array workouts "array of Workout objects with matching IDs"
         int duration "in days"
     }
 

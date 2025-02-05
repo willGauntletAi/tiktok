@@ -108,7 +108,39 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
         NavigationLink(
           destination: Group {
             if let item = selectedItem {
-              VideoDetailView(item: item, type: type)
+              VideoDetailView(
+                workoutPlan: WorkoutPlan(
+                  id: UUID().uuidString,
+                  title: item.title,
+                  description: item.description,
+                  instructorId: item.instructorId,
+                  videoUrl: item.videoUrl,
+                  thumbnailUrl: item.thumbnailUrl,
+                  difficulty: item.difficulty,
+                  targetMuscles: item.targetMuscles,
+                  workouts: [
+                    Workout(
+                      id: UUID().uuidString,
+                      title: item.title,
+                      description: item.description,
+                      exercises: type == "exercise" ? [item as! Exercise] : [],
+                      instructorId: item.instructorId,
+                      videoUrl: item.videoUrl,
+                      thumbnailUrl: item.thumbnailUrl,
+                      difficulty: item.difficulty,
+                      targetMuscles: item.targetMuscles,
+                      totalDuration: (item as? Exercise)?.duration ?? 0,
+                      createdAt: item.createdAt,
+                      updatedAt: item.updatedAt
+                    )
+                  ],
+                  duration: 1,
+                  createdAt: item.createdAt,
+                  updatedAt: item.updatedAt
+                ),
+                workoutIndex: 0,
+                exerciseIndex: type == "exercise" ? 0 : nil
+              )
             }
           }, isActive: $isNavigationActive
         ) {
@@ -191,7 +223,39 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
       }
     }
     .navigationDestination(for: T.self) { item in
-      VideoDetailView(item: item, type: type)
+      VideoDetailView(
+        workoutPlan: WorkoutPlan(
+          id: UUID().uuidString,
+          title: item.title,
+          description: item.description,
+          instructorId: item.instructorId,
+          videoUrl: item.videoUrl,
+          thumbnailUrl: item.thumbnailUrl,
+          difficulty: item.difficulty,
+          targetMuscles: item.targetMuscles,
+          workouts: [
+            Workout(
+              id: UUID().uuidString,
+              title: item.title,
+              description: item.description,
+              exercises: type == "exercise" ? [item as! Exercise] : [],
+              instructorId: item.instructorId,
+              videoUrl: item.videoUrl,
+              thumbnailUrl: item.thumbnailUrl,
+              difficulty: item.difficulty,
+              targetMuscles: item.targetMuscles,
+              totalDuration: (item as? Exercise)?.duration ?? 0,
+              createdAt: item.createdAt,
+              updatedAt: item.updatedAt
+            )
+          ],
+          duration: 1,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt
+        ),
+        workoutIndex: 0,
+        exerciseIndex: type == "exercise" ? 0 : nil
+      )
     }
   }
 }

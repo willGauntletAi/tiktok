@@ -131,7 +131,7 @@ class SearchViewModel: ObservableObject {
 
       let snapshot = try await query.getDocuments()
       workoutPlans = snapshot.documents.compactMap { document in
-        try? document.data(as: WorkoutPlan.self)
+        WorkoutPlan(document: document)
       }
       exercises = []
       workouts = []

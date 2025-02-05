@@ -156,9 +156,8 @@ struct VideoGridView: View {
         ForEach(videos) { video in
           NavigationLink(
             destination: VideoDetailView(
-              item: Exercise(
-                id: video.id,
-                type: video.type.rawValue,
+              workoutPlan: WorkoutPlan(
+                id: UUID().uuidString,
                 title: video.title,
                 description: video.description,
                 instructorId: video.instructorId,
@@ -166,11 +165,43 @@ struct VideoGridView: View {
                 thumbnailUrl: video.thumbnailUrl,
                 difficulty: Difficulty(rawValue: video.difficulty.rawValue) ?? .beginner,
                 targetMuscles: video.targetMuscles,
-                duration: 0,
+                workouts: [
+                  Workout(
+                    id: UUID().uuidString,
+                    title: video.title,
+                    description: video.description,
+                    exercises: [
+                      Exercise(
+                        id: video.id,
+                        type: video.type.rawValue,
+                        title: video.title,
+                        description: video.description,
+                        instructorId: video.instructorId,
+                        videoUrl: video.videoUrl,
+                        thumbnailUrl: video.thumbnailUrl,
+                        difficulty: Difficulty(rawValue: video.difficulty.rawValue) ?? .beginner,
+                        targetMuscles: video.targetMuscles,
+                        duration: 0,
+                        createdAt: video.createdAt,
+                        updatedAt: video.updatedAt
+                      )
+                    ],
+                    instructorId: video.instructorId,
+                    videoUrl: video.videoUrl,
+                    thumbnailUrl: video.thumbnailUrl,
+                    difficulty: Difficulty(rawValue: video.difficulty.rawValue) ?? .beginner,
+                    targetMuscles: video.targetMuscles,
+                    totalDuration: 0,
+                    createdAt: video.createdAt,
+                    updatedAt: video.updatedAt
+                  )
+                ],
+                duration: 1,
                 createdAt: video.createdAt,
                 updatedAt: video.updatedAt
               ),
-              type: "exercise"
+              workoutIndex: 0,
+              exerciseIndex: 0
             )
           ) {
             VideoThumbnailView(video: video)

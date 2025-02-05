@@ -130,11 +130,64 @@ struct SearchView: View {
     .navigationDestination(for: SearchDestination.self) { destination in
       switch destination {
       case .exercise(let exercise):
-        VideoDetailView(item: exercise, type: "exercise")
+        VideoDetailView(
+          workoutPlan: WorkoutPlan(
+            id: UUID().uuidString,
+            title: exercise.title,
+            description: exercise.description,
+            instructorId: exercise.instructorId,
+            videoUrl: exercise.videoUrl,
+            thumbnailUrl: exercise.thumbnailUrl,
+            difficulty: exercise.difficulty,
+            targetMuscles: exercise.targetMuscles,
+            workouts: [
+              Workout(
+                id: UUID().uuidString,
+                title: exercise.title,
+                description: exercise.description,
+                exercises: [exercise],
+                instructorId: exercise.instructorId,
+                videoUrl: exercise.videoUrl,
+                thumbnailUrl: exercise.thumbnailUrl,
+                difficulty: exercise.difficulty,
+                targetMuscles: exercise.targetMuscles,
+                totalDuration: exercise.duration,
+                createdAt: exercise.createdAt,
+                updatedAt: exercise.updatedAt
+              )
+            ],
+            duration: 1,
+            createdAt: exercise.createdAt,
+            updatedAt: exercise.updatedAt
+          ),
+          workoutIndex: 0,
+          exerciseIndex: 0
+        )
       case .workout(let workout):
-        VideoDetailView(item: workout, type: "workout")
+        VideoDetailView(
+          workoutPlan: WorkoutPlan(
+            id: UUID().uuidString,
+            title: workout.title,
+            description: workout.description,
+            instructorId: workout.instructorId,
+            videoUrl: workout.videoUrl,
+            thumbnailUrl: workout.thumbnailUrl,
+            difficulty: workout.difficulty,
+            targetMuscles: workout.targetMuscles,
+            workouts: [workout],
+            duration: 1,
+            createdAt: workout.createdAt,
+            updatedAt: workout.updatedAt
+          ),
+          workoutIndex: 0,
+          exerciseIndex: nil
+        )
       case .workoutPlan(let plan):
-        VideoDetailView(item: plan, type: "workoutPlan")
+        VideoDetailView(
+          workoutPlan: plan,
+          workoutIndex: nil,
+          exerciseIndex: nil
+        )
       }
     }
   }

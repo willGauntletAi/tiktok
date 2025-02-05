@@ -32,19 +32,23 @@ class CreateWorkoutPlanViewModel: ObservableObject {
   func addWorkout(_ workout: Workout) {
     if !selectedWorkouts.contains(where: { $0.id == workout.id }) {
       selectedWorkouts.append(workout)
+      workoutPlan.workouts = selectedWorkouts
     }
   }
 
   func removeWorkout(_ workout: Workout) {
     selectedWorkouts.removeAll { $0.id == workout.id }
+    workoutPlan.workouts = selectedWorkouts
   }
 
   func removeWorkout(at offsets: IndexSet) {
     selectedWorkouts.remove(atOffsets: offsets)
+    workoutPlan.workouts = selectedWorkouts
   }
 
   func moveWorkout(from source: IndexSet, to destination: Int) {
     selectedWorkouts.move(fromOffsets: source, toOffset: destination)
+    workoutPlan.workouts = selectedWorkouts
   }
 
   func loadVideo(from item: PhotosPickerItem?) async {
@@ -118,7 +122,6 @@ class CreateWorkoutPlanViewModel: ObservableObject {
         // 3. Create workout plan document
         workoutPlan.type = "workoutPlan"
         workoutPlan.instructorId = userId
-        workoutPlan.workouts = selectedWorkouts.map { $0.id }
         workoutPlan.videoUrl = videoUrl
         workoutPlan.thumbnailUrl = thumbnailUrl
         workoutPlan.createdAt = Date()
