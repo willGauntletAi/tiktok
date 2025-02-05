@@ -79,45 +79,39 @@ struct SearchView: View {
       ScrollView {
         LazyVStack(spacing: 15) {
           ForEach(viewModel.exercises) { exercise in
-            NavigationLink(value: SearchDestination.exercise(exercise)) {
-              ContentCard(
-                title: exercise.title,
-                description: exercise.description,
-                thumbnailUrl: exercise.thumbnailUrl,
-                difficulty: exercise.difficulty.rawValue,
-                targetMuscles: exercise.targetMuscles,
-                contentType: .exercise
-              )
-            }
-            .buttonStyle(PlainButtonStyle())
+            ContentCard(
+              title: exercise.title,
+              description: exercise.description,
+              thumbnailUrl: exercise.thumbnailUrl,
+              difficulty: exercise.difficulty.rawValue,
+              targetMuscles: exercise.targetMuscles,
+              contentType: .exercise,
+              destination: .exercise(exercise)
+            )
           }
 
           ForEach(viewModel.workouts) { workout in
-            NavigationLink(value: SearchDestination.workout(workout)) {
-              ContentCard(
-                title: workout.title,
-                description: workout.description,
-                thumbnailUrl: workout.thumbnailUrl,
-                difficulty: workout.difficulty.rawValue,
-                targetMuscles: workout.targetMuscles,
-                contentType: .workout
-              )
-            }
-            .buttonStyle(PlainButtonStyle())
+            ContentCard(
+              title: workout.title,
+              description: workout.description,
+              thumbnailUrl: workout.thumbnailUrl,
+              difficulty: workout.difficulty.rawValue,
+              targetMuscles: workout.targetMuscles,
+              contentType: .workout,
+              destination: .workout(workout)
+            )
           }
 
           ForEach(viewModel.workoutPlans) { plan in
-            NavigationLink(value: SearchDestination.workoutPlan(plan)) {
-              ContentCard(
-                title: plan.title,
-                description: plan.description,
-                thumbnailUrl: plan.thumbnailUrl,
-                difficulty: plan.difficulty.rawValue,
-                targetMuscles: plan.targetMuscles,
-                contentType: .workoutPlan
-              )
-            }
-            .buttonStyle(PlainButtonStyle())
+            ContentCard(
+              title: plan.title,
+              description: plan.description,
+              thumbnailUrl: plan.thumbnailUrl,
+              difficulty: plan.difficulty.rawValue,
+              targetMuscles: plan.targetMuscles,
+              contentType: .workoutPlan,
+              destination: .workoutPlan(plan)
+            )
           }
         }
         .padding(.horizontal)
@@ -153,70 +147,76 @@ struct ContentCard: View {
   let difficulty: String
   let targetMuscles: [String]
   let contentType: ContentType
+  let destination: SearchDestination
 
   var body: some View {
-    VStack(alignment: .leading) {
-      AsyncImage(url: URL(string: thumbnailUrl)) { image in
-        image
-          .resizable()
-          .aspectRatio(contentMode: .fill)
-      } placeholder: {
-        Rectangle()
-          .fill(Color.gray.opacity(0.2))
-      }
-      .frame(height: 200)
-      .cornerRadius(10)
-
-      VStack(alignment: .leading, spacing: 4) {
-        HStack {
-          Text(title)
-            .font(.headline)
-          Spacer()
-          Text(contentType.displayName)
-            .font(.caption)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.blue.opacity(0.2))
-            .cornerRadius(8)
+    NavigationLink(value: destination) {
+      VStack(alignment: .leading) {
+        AsyncImage(url: URL(string: thumbnailUrl)) { image in
+          image
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+        } placeholder: {
+          Rectangle()
+            .fill(Color.gray.opacity(0.2))
         }
+        .frame(height: 200)
+        .cornerRadius(10)
 
-        Text(description)
-          .font(.subheadline)
-          .foregroundColor(.secondary)
-          .lineLimit(2)
-
-        HStack {
-          Text(difficulty.capitalized)
-            .font(.caption)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.blue.opacity(0.2))
-            .cornerRadius(8)
-
-          ForEach(targetMuscles.prefix(3), id: \.self) { muscle in
-            Text(muscle)
+        VStack(alignment: .leading, spacing: 4) {
+          HStack {
+            Text(title)
+              .font(.headline)
+            Spacer()
+            Text(contentType.displayName)
               .font(.caption)
               .padding(.horizontal, 8)
               .padding(.vertical, 4)
-              .background(Color.green.opacity(0.2))
+              .background(Color.blue.opacity(0.2))
               .cornerRadius(8)
           }
 
-          if targetMuscles.count > 3 {
-            Text("+\(targetMuscles.count - 3)")
+          Text(description)
+            .font(.subheadline)
+            .foregroundColor(.secondary)
+            .lineLimit(2)
+
+          HStack {
+            Text(difficulty.capitalized)
               .font(.caption)
               .padding(.horizontal, 8)
               .padding(.vertical, 4)
-              .background(Color.green.opacity(0.2))
+              .background(Color.blue.opacity(0.2))
               .cornerRadius(8)
+
+            ForEach(targetMuscles.prefix(3), id: \.self) { muscle in
+              Text(muscle)
+                .font(.caption)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.green.opacity(0.2))
+                .cornerRadius(8)
+            }
+
+            if targetMuscles.count > 3 {
+              Text("+\(targetMuscles.count - 3)")
+                .font(.caption)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.green.opacity(0.2))
+                .cornerRadius(8)
+            }
           }
         }
+        .padding(.vertical, 8)
       }
-      .padding(.vertical, 8)
+      .frame(maxWidth: .infinity)
+      .background(Color(.systemBackground))
+      .cornerRadius(12)
+      .shadow(radius: 2)
+      .contentShape(Rectangle())
     }
-    .background(Color(.systemBackground))
-    .cornerRadius(12)
-    .shadow(radius: 2)
+    .buttonStyle(PlainButtonStyle())
   }
 }
 
