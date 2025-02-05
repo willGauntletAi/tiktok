@@ -1,7 +1,7 @@
 import FirebaseFirestore
 import Foundation
 
-struct WorkoutPlan: Identifiable {
+struct WorkoutPlan: Identifiable, Codable {
   var id: String
   var type: String
   var title: String
@@ -29,8 +29,26 @@ struct WorkoutPlan: Identifiable {
       "targetMuscles": targetMuscles,
       "workouts": workouts,
       "duration": duration,
-      "createdAt": createdAt,
-      "updatedAt": updatedAt,
+      "createdAt": Timestamp(date: createdAt),
+      "updatedAt": Timestamp(date: updatedAt),
     ]
+  }
+
+  static func empty() -> WorkoutPlan {
+    WorkoutPlan(
+      id: UUID().uuidString,
+      type: "workoutPlan",
+      title: "",
+      description: "",
+      instructorId: "",
+      videoUrl: "",
+      thumbnailUrl: "",
+      difficulty: .beginner,
+      targetMuscles: [],
+      workouts: [],
+      duration: 7,  // Default to 7 days
+      createdAt: Date(),
+      updatedAt: Date()
+    )
   }
 }

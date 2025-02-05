@@ -146,24 +146,3 @@ class CreateWorkoutPlanViewModel: ObservableObject {
     isLoading = false
   }
 }
-
-// Helper extension for empty workout plan
-extension WorkoutPlan {
-  static func empty() -> WorkoutPlan {
-    WorkoutPlan(
-      id: "",
-      type: "workoutPlan",
-      title: "",
-      description: "",
-      instructorId: "",
-      videoUrl: "",
-      thumbnailUrl: "",
-      difficulty: .beginner,
-      targetMuscles: [],
-      workouts: [],
-      duration: 7,  // Default to 7 days
-      createdAt: Date(),
-      updatedAt: Date()
-    )
-  }
-}

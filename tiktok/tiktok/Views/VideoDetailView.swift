@@ -59,7 +59,8 @@ struct VideoDetailView<T>: View {
             VStack(alignment: .leading, spacing: 12) {
               DetailRow(
                 title: "Difficulty",
-                value: ((item as? Exercise)?.difficulty.rawValue ?? (item as? Workout)?.difficulty)
+                value: ((item as? Exercise)?.difficulty.rawValue
+                  ?? (item as? Workout)?.difficulty.rawValue)
                   ?? "beginner"
                   .capitalized)
 

@@ -3,7 +3,7 @@ import FirebaseFirestore
 import Foundation
 
 protocol EmptyInitializable {
-    static func empty() -> Self
+  static func empty() -> Self
 }
 
 extension Exercise: EmptyInitializable {}
@@ -90,7 +90,8 @@ class FindVideoViewModel<T: Identifiable & EmptyInitializable>: ObservableObject
             instructorId: data["instructorId"] as? String ?? "",
             videoUrl: data["videoUrl"] as? String ?? "",
             thumbnailUrl: data["thumbnailUrl"] as? String ?? "",
-            difficulty: Difficulty(rawValue: data["difficulty"] as? String ?? "") ?? .beginner,
+            difficulty: Difficulty(rawValue: data["difficulty"] as? String ?? "beginner")
+              ?? .beginner,
             targetMuscles: data["targetMuscles"] as? [String] ?? [],
             duration: data["duration"] as? Int ?? 0,
             createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
@@ -105,7 +106,8 @@ class FindVideoViewModel<T: Identifiable & EmptyInitializable>: ObservableObject
             instructorId: data["instructorId"] as? String ?? "",
             videoUrl: data["videoUrl"] as? String ?? "",
             thumbnailUrl: data["thumbnailUrl"] as? String ?? "",
-            difficulty: data["difficulty"] as? String ?? "beginner",
+            difficulty: Difficulty(rawValue: data["difficulty"] as? String ?? "beginner")
+              ?? .beginner,
             targetMuscles: data["targetMuscles"] as? [String] ?? [],
             totalDuration: data["totalDuration"] as? Int ?? 0,
             type: data["type"] as? String ?? "workout",

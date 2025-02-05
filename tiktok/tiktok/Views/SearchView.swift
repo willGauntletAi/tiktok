@@ -5,7 +5,26 @@ struct SearchView: View {
 
   var body: some View {
     ScrollView {
-      VStack(spacing: 8) {
+      VStack(spacing: 16) {
+        // Content Type Picker
+        Picker("Content Type", selection: $viewModel.selectedContentType) {
+          ForEach(ContentType.allCases, id: \.self) { type in
+            Text(type.displayName).tag(type)
+          }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal)
+        .onChange(of: viewModel.selectedContentType) { _ in
+          Task {
+            await viewModel.search()
+          }
+        }
+
+        // Search Bar
+        TextField("Search", text: $viewModel.searchText)
+          .textFieldStyle(RoundedBorderTextFieldStyle())
+          .padding(.horizontal)
+
         // Muscle Groups Filter
         VStack(alignment: .leading, spacing: 4) {
           Text("Target Muscles")
@@ -40,7 +59,7 @@ struct SearchView: View {
 
               ForEach(viewModel.difficultyLevels, id: \.self) { difficulty in
                 FilterChip(
-                  title: difficulty.capitalized,
+                  title: difficulty.rawValue.capitalized,
                   isSelected: viewModel.selectedDifficulty == difficulty
                 ) {
                   viewModel.setDifficulty(difficulty)
@@ -54,18 +73,135 @@ struct SearchView: View {
         // Results
         LazyVStack(spacing: 15) {
           ForEach(viewModel.exercises) { exercise in
-            ExerciseCard(exercise: exercise)
-              .padding(.horizontal)
+            NavigationLink(destination: VideoDetailView(item: exercise, type: "exercise")) {
+              ContentCard(
+                title: exercise.title,
+                description: exercise.description,
+                thumbnailUrl: exercise.thumbnailUrl,
+                difficulty: exercise.difficulty.rawValue,
+                targetMuscles: exercise.targetMuscles,
+                contentType: .exercise
+              )
+            }
+            .buttonStyle(PlainButtonStyle())
+          }
+
+          ForEach(viewModel.workouts) { workout in
+            NavigationLink(destination: VideoDetailView(item: workout, type: "workout")) {
+              ContentCard(
+                title: workout.title,
+                description: workout.description,
+                thumbnailUrl: workout.thumbnailUrl,
+                difficulty: workout.difficulty.rawValue,
+                targetMuscles: workout.targetMuscles,
+                contentType: .workout
+              )
+            }
+            .buttonStyle(PlainButtonStyle())
+          }
+
+          ForEach(viewModel.workoutPlans) { plan in
+            NavigationLink(destination: VideoDetailView(item: plan, type: "workoutPlan")) {
+              ContentCard(
+                title: plan.title,
+                description: plan.description,
+                thumbnailUrl: plan.thumbnailUrl,
+                difficulty: plan.difficulty.rawValue,
+                targetMuscles: plan.targetMuscles,
+                contentType: .workoutPlan
+              )
+            }
+            .buttonStyle(PlainButtonStyle())
+          }
+        }
+        .padding(.horizontal)
+      }
+      .padding(.vertical)
+      .navigationTitle("Search")
+      .navigationBarTitleDisplayMode(.inline)
+      .onChange(of: viewModel.searchText) { _ in
+        Task {
+          await viewModel.search()
+        }
+      }
+      .task {
+        await viewModel.search()
+      }
+    }
+  }
+}
+
+struct ContentCard: View {
+  let title: String
+  let description: String
+  let thumbnailUrl: String
+  let difficulty: String
+  let targetMuscles: [String]
+  let contentType: ContentType
+
+  var body: some View {
+    VStack(alignment: .leading) {
+      AsyncImage(url: URL(string: thumbnailUrl)) { image in
+        image
+          .resizable()
+          .aspectRatio(contentMode: .fill)
+      } placeholder: {
+        Rectangle()
+          .fill(Color.gray.opacity(0.2))
+      }
+      .frame(height: 200)
+      .cornerRadius(10)
+
+      VStack(alignment: .leading, spacing: 4) {
+        HStack {
+          Text(title)
+            .font(.headline)
+          Spacer()
+          Text(contentType.displayName)
+            .font(.caption)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.blue.opacity(0.2))
+            .cornerRadius(8)
+        }
+
+        Text(description)
+          .font(.subheadline)
+          .foregroundColor(.secondary)
+          .lineLimit(2)
+
+        HStack {
+          Text(difficulty.capitalized)
+            .font(.caption)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.blue.opacity(0.2))
+            .cornerRadius(8)
+
+          ForEach(targetMuscles.prefix(3), id: \.self) { muscle in
+            Text(muscle)
+              .font(.caption)
+              .padding(.horizontal, 8)
+              .padding(.vertical, 4)
+              .background(Color.green.opacity(0.2))
+              .cornerRadius(8)
+          }
+
+          if targetMuscles.count > 3 {
+            Text("+\(targetMuscles.count - 3)")
+              .font(.caption)
+              .padding(.horizontal, 8)
+              .padding(.vertical, 4)
+              .background(Color.green.opacity(0.2))
+              .cornerRadius(8)
           }
         }
       }
-      .padding(.horizontal)
-      .navigationTitle("Search Exercises")
-      .navigationBarTitleDisplayMode(.inline)
+      .padding(.vertical, 8)
     }
-    .task {
-      await viewModel.searchExercises()
-    }
+    .background(Color(.systemBackground))
+    .cornerRadius(12)
+    .shadow(radius: 2)
   }
 }
 
@@ -82,60 +218,6 @@ struct FilterChip: View {
         .background(isSelected ? Color.blue : Color.gray.opacity(0.2))
         .foregroundColor(isSelected ? .white : .primary)
         .cornerRadius(20)
-    }
-  }
-}
-
-struct ExerciseCard: View {
-  let exercise: Exercise
-
-  var body: some View {
-    NavigationLink(destination: VideoDetailView(item: exercise, type: "exercise")) {
-      VStack(alignment: .leading) {
-        let thumbnailUrl = exercise.thumbnailUrl
-        AsyncImage(url: URL(string: thumbnailUrl)) { image in
-          image
-            .resizable()
-            .aspectRatio(contentMode: .fill)
-        } placeholder: {
-          Rectangle()
-            .fill(Color.gray.opacity(0.2))
-        }
-        .frame(height: 200)
-        .cornerRadius(10)
-
-        VStack(alignment: .leading, spacing: 4) {
-          Text(exercise.title)
-            .font(.headline)
-
-          Text(exercise.description)
-            .font(.subheadline)
-            .foregroundColor(.secondary)
-            .lineLimit(2)
-
-          HStack {
-            Text(exercise.difficulty.rawValue.capitalized)
-              .font(.caption)
-              .padding(.horizontal, 8)
-              .padding(.vertical, 4)
-              .background(Color.blue.opacity(0.2))
-              .cornerRadius(8)
-
-            ForEach(exercise.targetMuscles, id: \.self) { muscle in
-              Text(muscle)
-                .font(.caption)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.green.opacity(0.2))
-                .cornerRadius(8)
-            }
-          }
-        }
-        .padding(.vertical, 8)
-      }
-      .background(Color(.systemBackground))
-      .cornerRadius(12)
-      .shadow(radius: 2)
     }
   }
 }
