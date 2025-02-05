@@ -1,6 +1,13 @@
 import FirebaseFirestore
 import Foundation
 
+struct WorkoutWithMetadata: Encodable, Hashable, Decodable, Identifiable {
+  var id: String { workout.id }
+  var workout: Workout
+  var weekNumber: Int
+  var dayOfWeek: Int  // 1-7, where 1 is Monday
+}
+
 struct WorkoutPlan: VideoContent {
   var id: String
   var type: String = "workoutPlan"
@@ -11,7 +18,7 @@ struct WorkoutPlan: VideoContent {
   var thumbnailUrl: String
   var difficulty: Difficulty
   var targetMuscles: [String]
-  var workouts: [Workout]  // Array of full Workout objects
+  var workouts: [WorkoutWithMetadata]  // Array of WorkoutWithMetadata objects
   var duration: Int  // in days
   var createdAt: Date
   var updatedAt: Date
@@ -25,7 +32,7 @@ struct WorkoutPlan: VideoContent {
     thumbnailUrl: String,
     difficulty: Difficulty,
     targetMuscles: [String],
-    workouts: [Workout],
+    workouts: [WorkoutWithMetadata],
     duration: Int,
     createdAt: Date,
     updatedAt: Date
@@ -59,9 +66,11 @@ struct WorkoutPlan: VideoContent {
       "createdAt": Timestamp(date: createdAt),
       "updatedAt": Timestamp(date: updatedAt),
     ]
-    dict["workouts"] = workouts.map { workout in
-      var workoutDict = workout.dictionary
-      workoutDict["id"] = workout.id
+    dict["workouts"] = workouts.map { workoutMeta in
+      var workoutDict = workoutMeta.workout.dictionary
+      workoutDict["id"] = workoutMeta.workout.id
+      workoutDict["weekNumber"] = workoutMeta.weekNumber
+      workoutDict["dayOfWeek"] = workoutMeta.dayOfWeek
       return workoutDict
     }
     dict["duration"] = duration
@@ -82,7 +91,7 @@ struct WorkoutPlan: VideoContent {
     self.createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
     self.updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
 
-    // Convert workout data to Workout objects
+    // Convert workout data to WorkoutWithMetadata objects
     if let workoutDicts = data["workouts"] as? [[String: Any]] {
       self.workouts = workoutDicts.compactMap { workoutData in
         guard let id = workoutData["id"] as? String else { return nil }
@@ -110,7 +119,7 @@ struct WorkoutPlan: VideoContent {
           }
         }
 
-        return Workout(
+        let workout = Workout(
           id: id,
           title: workoutData["title"] as? String ?? "",
           description: workoutData["description"] as? String ?? "",
@@ -124,6 +133,12 @@ struct WorkoutPlan: VideoContent {
           totalDuration: workoutData["totalDuration"] as? Int ?? 0,
           createdAt: (workoutData["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
           updatedAt: (workoutData["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
+        )
+
+        return WorkoutWithMetadata(
+          workout: workout,
+          weekNumber: workoutData["weekNumber"] as? Int ?? 1,
+          dayOfWeek: workoutData["dayOfWeek"] as? Int ?? 1
         )
       }
     } else {
@@ -141,7 +156,7 @@ struct WorkoutPlan: VideoContent {
       thumbnailUrl: "",
       difficulty: Difficulty.beginner,
       targetMuscles: [],
-      workouts: [],
+      workouts: [],  // Empty array of WorkoutWithMetadata
       duration: 7,  // Default to 7 days
       createdAt: Date(),
       updatedAt: Date()

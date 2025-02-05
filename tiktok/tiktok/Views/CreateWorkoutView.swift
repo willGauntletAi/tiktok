@@ -83,12 +83,12 @@ struct CreateWorkoutView: View {
                 .padding(.vertical)
             } else {
               List {
-                ForEach(viewModel.selectedExercises) { exercise in
+                ForEach(viewModel.selectedExercises) { exerciseInstance in
                   HStack {
                     VStack(alignment: .leading) {
-                      Text(exercise.title)
+                      Text(exerciseInstance.exercise.title)
                         .font(.headline)
-                      Text("\(exercise.duration) seconds")
+                      Text("\(exerciseInstance.exercise.duration) seconds")
                         .font(.caption)
                         .foregroundColor(.gray)
                     }
@@ -153,13 +153,12 @@ struct CreateWorkoutView: View {
           type: "exercise",
           title: "Find Exercise",
           onItemSelected: { exercise in
-            if viewModel.selectedExercises.contains(where: { $0.id == exercise.id }) {
-              viewModel.removeExercise(exercise)
-            } else {
-              viewModel.addExercise(exercise)
-            }
+            viewModel.addExercise(exercise)
           },
-          selectedIds: Set(viewModel.selectedExercises.map { $0.id })
+          selectedIds: Set(viewModel.selectedExercises.map { $0.exercise.id }),
+          actionButtonTitle: { id in
+            viewModel.selectedExercises.contains { $0.exercise.id == id } ? "Add Again" : "Add"
+          }
         )
       }
     }

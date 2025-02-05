@@ -141,19 +141,23 @@ struct SearchView: View {
             difficulty: exercise.difficulty,
             targetMuscles: exercise.targetMuscles,
             workouts: [
-              Workout(
-                id: UUID().uuidString,
-                title: exercise.title,
-                description: exercise.description,
-                exercises: [exercise],
-                instructorId: exercise.instructorId,
-                videoUrl: exercise.videoUrl,
-                thumbnailUrl: exercise.thumbnailUrl,
-                difficulty: exercise.difficulty,
-                targetMuscles: exercise.targetMuscles,
-                totalDuration: exercise.duration,
-                createdAt: exercise.createdAt,
-                updatedAt: exercise.updatedAt
+              WorkoutWithMetadata(
+                workout: Workout(
+                  id: UUID().uuidString,
+                  title: exercise.title,
+                  description: exercise.description,
+                  exercises: [exercise],
+                  instructorId: exercise.instructorId,
+                  videoUrl: exercise.videoUrl,
+                  thumbnailUrl: exercise.thumbnailUrl,
+                  difficulty: exercise.difficulty,
+                  targetMuscles: exercise.targetMuscles,
+                  totalDuration: exercise.duration,
+                  createdAt: exercise.createdAt,
+                  updatedAt: exercise.updatedAt
+                ),
+                weekNumber: 1,
+                dayOfWeek: 1
               )
             ],
             duration: 1,
@@ -174,7 +178,7 @@ struct SearchView: View {
             thumbnailUrl: workout.thumbnailUrl,
             difficulty: workout.difficulty,
             targetMuscles: workout.targetMuscles,
-            workouts: [workout],
+            workouts: [WorkoutWithMetadata(workout: workout, weekNumber: 1, dayOfWeek: 1)],
             duration: 1,
             createdAt: workout.createdAt,
             updatedAt: workout.updatedAt

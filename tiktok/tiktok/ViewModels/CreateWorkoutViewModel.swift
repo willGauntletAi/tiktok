@@ -5,10 +5,20 @@ import FirebaseStorage
 import PhotosUI
 import SwiftUI
 
+struct ExerciseInstance: Identifiable {
+  let id: String
+  let exercise: Exercise
+
+  init(exercise: Exercise) {
+    self.id = UUID().uuidString
+    self.exercise = exercise
+  }
+}
+
 @MainActor
 class CreateWorkoutViewModel: ObservableObject {
   @Published var workout: Workout
-  @Published var selectedExercises: [Exercise] = []
+  @Published var selectedExercises: [ExerciseInstance] = []
   @Published var isLoading = false
   @Published var errorMessage: String?
   @Published var showExerciseSelector = false
@@ -30,14 +40,12 @@ class CreateWorkoutViewModel: ObservableObject {
   }
 
   func addExercise(_ exercise: Exercise) {
-    if !selectedExercises.contains(where: { $0.id == exercise.id }) {
-      selectedExercises.append(exercise)
-      updateTotalDuration()
-    }
+    selectedExercises.append(ExerciseInstance(exercise: exercise))
+    updateTotalDuration()
   }
 
   func removeExercise(_ exercise: Exercise) {
-    selectedExercises.removeAll { $0.id == exercise.id }
+    selectedExercises.removeAll { $0.exercise.id == exercise.id }
     updateTotalDuration()
   }
 
@@ -51,7 +59,7 @@ class CreateWorkoutViewModel: ObservableObject {
   }
 
   private func updateTotalDuration() {
-    workout.totalDuration = selectedExercises.reduce(0) { $0 + $1.duration }
+    workout.totalDuration = selectedExercises.reduce(0) { $0 + $1.exercise.duration }
   }
 
   func loadVideo(from item: PhotosPickerItem?) async {
@@ -125,7 +133,7 @@ class CreateWorkoutViewModel: ObservableObject {
         // 3. Create workout document
         workout.type = "workout"
         workout.instructorId = userId
-        workout.exercises = selectedExercises
+        workout.exercises = selectedExercises.map { $0.exercise }
         workout.videoUrl = videoUrl
         workout.thumbnailUrl = thumbnailUrl
         workout.createdAt = Date()

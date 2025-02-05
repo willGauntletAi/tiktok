@@ -1,4 +1,3 @@
-```mermaid
 erDiagram
     User {
         string id PK
@@ -44,7 +43,7 @@ erDiagram
 
     WorkoutPlan {
         string id PK "extends Video"
-        array workouts "array of Workout objects with matching IDs"
+        array workouts "array of {workout: Workout object with matching ID, weekNumber: int, dayOfWeek: int (1-7)}"
         int duration "in days"
     }
 

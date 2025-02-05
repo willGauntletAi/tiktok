@@ -8,6 +8,7 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
   let selectedIds: Set<String>
   let type: String
   let title: String
+  let actionButtonTitle: ((String) -> String)?
 
   enum Field {
     case instructorEmail
@@ -18,13 +19,15 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
     type: String,
     title: String,
     onItemSelected: ((T) -> Void)? = nil,
-    selectedIds: Set<String> = []
+    selectedIds: Set<String> = [],
+    actionButtonTitle: ((String) -> String)? = nil
   ) {
     self._viewModel = StateObject(wrappedValue: FindVideoViewModel<T>(type: type))
     self.onItemSelected = onItemSelected
     self.selectedIds = selectedIds
     self.type = type
     self.title = title
+    self.actionButtonTitle = actionButtonTitle
   }
 
   struct SearchSection<C: VideoContent>: View {
@@ -100,6 +103,7 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
     let type: String
     let selectedIds: Set<String>
     let onToggle: (T) -> Void
+    let actionButtonTitle: ((String) -> String)?
     @State private var selectedItem: T?
     @State private var isNavigationActive = false
 
@@ -119,19 +123,23 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
                   difficulty: item.difficulty,
                   targetMuscles: item.targetMuscles,
                   workouts: [
-                    Workout(
-                      id: UUID().uuidString,
-                      title: item.title,
-                      description: item.description,
-                      exercises: type == "exercise" ? [item as! Exercise] : [],
-                      instructorId: item.instructorId,
-                      videoUrl: item.videoUrl,
-                      thumbnailUrl: item.thumbnailUrl,
-                      difficulty: item.difficulty,
-                      targetMuscles: item.targetMuscles,
-                      totalDuration: (item as? Exercise)?.duration ?? 0,
-                      createdAt: item.createdAt,
-                      updatedAt: item.updatedAt
+                    WorkoutWithMetadata(
+                      workout: Workout(
+                        id: UUID().uuidString,
+                        title: item.title,
+                        description: item.description,
+                        exercises: type == "exercise" ? [item as! Exercise] : [],
+                        instructorId: item.instructorId,
+                        videoUrl: item.videoUrl,
+                        thumbnailUrl: item.thumbnailUrl,
+                        difficulty: item.difficulty,
+                        targetMuscles: item.targetMuscles,
+                        totalDuration: (item as? Exercise)?.duration ?? 0,
+                        createdAt: item.createdAt,
+                        updatedAt: item.updatedAt
+                      ),
+                      weekNumber: 1,
+                      dayOfWeek: 1
                     )
                   ],
                   duration: 1,
@@ -153,7 +161,8 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
               video: item,
               isSelected: selectedIds.contains(String(describing: item.id)),
               onToggle: onToggle,
-              addToType: type
+              addToType: type,
+              actionButtonTitle: actionButtonTitle
             )
             .contentShape(Rectangle())
             .onTapGesture {
@@ -196,7 +205,8 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
             selectedIds: selectedIds,
             onToggle: { item in
               onItemSelected?(item)
-            }
+            },
+            actionButtonTitle: actionButtonTitle
           )
         }
       }
@@ -234,19 +244,23 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
           difficulty: item.difficulty,
           targetMuscles: item.targetMuscles,
           workouts: [
-            Workout(
-              id: UUID().uuidString,
-              title: item.title,
-              description: item.description,
-              exercises: type == "exercise" ? [item as! Exercise] : [],
-              instructorId: item.instructorId,
-              videoUrl: item.videoUrl,
-              thumbnailUrl: item.thumbnailUrl,
-              difficulty: item.difficulty,
-              targetMuscles: item.targetMuscles,
-              totalDuration: (item as? Exercise)?.duration ?? 0,
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt
+            WorkoutWithMetadata(
+              workout: Workout(
+                id: UUID().uuidString,
+                title: item.title,
+                description: item.description,
+                exercises: type == "exercise" ? [item as! Exercise] : [],
+                instructorId: item.instructorId,
+                videoUrl: item.videoUrl,
+                thumbnailUrl: item.thumbnailUrl,
+                difficulty: item.difficulty,
+                targetMuscles: item.targetMuscles,
+                totalDuration: (item as? Exercise)?.duration ?? 0,
+                createdAt: item.createdAt,
+                updatedAt: item.updatedAt
+              ),
+              weekNumber: 1,
+              dayOfWeek: 1
             )
           ],
           duration: 1,
@@ -265,6 +279,7 @@ struct VideoResultCard<T: VideoContent>: View {
   let isSelected: Bool
   let onToggle: (T) -> Void
   let addToType: String
+  let actionButtonTitle: ((String) -> String)?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -274,12 +289,14 @@ struct VideoResultCard<T: VideoContent>: View {
         onToggle(video)
       }) {
         HStack {
-          Image(systemName: isSelected ? "minus.circle.fill" : "plus.circle.fill")
-          Text(isSelected ? "Remove from \(addToType)" : "Add to \(addToType)")
+          Image(systemName: isSelected ? "plus.circle.fill" : "plus.circle.fill")
+          Text(
+            actionButtonTitle?(String(describing: video.id))
+              ?? (isSelected ? "Add Again" : "Add to \(addToType)"))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .background(isSelected ? Color.red : Color.blue)
+        .background(Color.blue)
         .foregroundColor(.white)
         .cornerRadius(8)
       }

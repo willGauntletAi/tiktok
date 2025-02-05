@@ -15,6 +15,11 @@ struct VideoDetailView: View {
 
   private var currentWorkout: Workout? {
     guard let workoutIndex = workoutIndex else { return nil }
+    return workoutPlan.workouts[workoutIndex].workout
+  }
+
+  private var currentWorkoutMetadata: WorkoutWithMetadata? {
+    guard let workoutIndex = workoutIndex else { return nil }
     return workoutPlan.workouts[workoutIndex]
   }
 
@@ -22,7 +27,7 @@ struct VideoDetailView: View {
     guard let workoutIndex = workoutIndex,
       let exerciseIndex = exerciseIndex
     else { return nil }
-    return workoutPlan.workouts[workoutIndex].exercises[exerciseIndex]
+    return workoutPlan.workouts[workoutIndex].workout.exercises[exerciseIndex]
   }
 
   private var title: String {
@@ -93,7 +98,7 @@ struct VideoDetailView: View {
     if let currentWorkoutIndex = workoutIndex, let currentExerciseIndex = exerciseIndex {
       let workout = workoutPlan.workouts[currentWorkoutIndex]
       // If there are more exercises in current workout
-      if currentExerciseIndex + 1 < workout.exercises.count {
+      if currentExerciseIndex + 1 < workout.workout.exercises.count {
         NavigationUtil.navigate(
           to: VideoDetailView(
             workoutPlan: workoutPlan,
@@ -115,7 +120,7 @@ struct VideoDetailView: View {
     else if let currentWorkoutIndex = workoutIndex {
       let workout = workoutPlan.workouts[currentWorkoutIndex]
       // Navigate to first exercise if available
-      if !workout.exercises.isEmpty {
+      if !workout.workout.exercises.isEmpty {
         NavigationUtil.navigate(
           to: VideoDetailView(
             workoutPlan: workoutPlan,
@@ -191,10 +196,16 @@ struct VideoDetailView: View {
 
               if let exercise = currentExercise {
                 DetailRow(title: "Duration", value: "\(exercise.duration) seconds")
-              } else {
+              } else if let workoutMeta = currentWorkoutMetadata {
                 DetailRow(
-                  title: "Total Duration", value: "\(currentWorkout?.totalDuration ?? 0) seconds")
-                DetailRow(title: "Exercises", value: "\(currentWorkout?.exercises.count ?? 0)")
+                  title: "Total Duration",
+                  value: "\(workoutMeta.workout.totalDuration) seconds")
+                DetailRow(
+                  title: "Exercises",
+                  value: "\(workoutMeta.workout.exercises.count)")
+                DetailRow(
+                  title: "Schedule",
+                  value: "Week \(workoutMeta.weekNumber), Day \(workoutMeta.dayOfWeek)")
               }
             }
           }
