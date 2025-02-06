@@ -408,6 +408,25 @@ class VideoEditViewModel: ObservableObject {
     clips.removeAll()
     selectedClipIndex = nil
   }
+
+  func swapClips(at index: Int) {
+    guard index < clips.count - 1 else { return }
+
+    // Swap the clips
+    clips.swapAt(index, index + 1)
+
+    // Update selected clip index if needed
+    if selectedClipIndex == index {
+      selectedClipIndex = index + 1
+    } else if selectedClipIndex == index + 1 {
+      selectedClipIndex = index
+    }
+
+    // Update player with new clip order
+    Task {
+      try? await setupPlayerWithComposition()
+    }
+  }
 }
 
 // Custom video compositor for applying filters

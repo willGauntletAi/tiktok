@@ -16,6 +16,7 @@ struct VideoTimelineView: View {
 
   private let thumbnailHeight: CGFloat = 60
   private let positionIndicatorWidth: CGFloat = 2
+  private let swapButtonSize: CGFloat = 24
 
   var body: some View {
     VStack(spacing: 12) {
@@ -60,42 +61,59 @@ struct VideoTimelineView: View {
 
             // Clips thumbnails
             HStack(spacing: 0) {
-              ForEach(viewModel.clips.indices, id: \.self) { index in
-                let clip = viewModel.clips[index]
-                if let thumbnail = clip.thumbnail {
-                  Image(uiImage: thumbnail)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(
-                      width: clipWidth(for: clip, in: geometry.size.width),
-                      height: thumbnailHeight
-                    )
-                    .clipped()
-                    .overlay(
-                      Rectangle()
-                        .stroke(
-                          viewModel.selectedClipIndex == index ? Color.blue : Color.clear,
-                          lineWidth: 2)
-                    )
-                    .onTapGesture {
-                      viewModel.selectedClipIndex = index
-                    }
-                    .overlay(alignment: .topTrailing) {
-                      // Delete button
-                      Button(action: {
-                        clipToDelete = index
-                        showingDeleteAlert = true
-                      }) {
-                        Image(systemName: "xmark.circle.fill")
-                          .foregroundColor(.red)
-                          .background(Circle().fill(Color.white))
-                          .padding(4)
+              ForEach(Array(viewModel.clips.enumerated()), id: \.element.id) { index, clip in
+                ZStack(alignment: .trailing) {
+                  if let thumbnail = clip.thumbnail {
+                    Image(uiImage: thumbnail)
+                      .resizable()
+                      .aspectRatio(contentMode: .fill)
+                      .frame(
+                        width: clipWidth(for: clip, in: geometry.size.width),
+                        height: thumbnailHeight
+                      )
+                      .clipped()
+                      .overlay(
+                        Rectangle()
+                          .stroke(
+                            viewModel.selectedClipIndex == index ? Color.blue : Color.clear,
+                            lineWidth: 2)
+                      )
+                      .onTapGesture {
+                        viewModel.selectedClipIndex = index
                       }
+                      .overlay(alignment: .topTrailing) {
+                        // Delete button
+                        Button(action: {
+                          clipToDelete = index
+                          showingDeleteAlert = true
+                        }) {
+                          Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.red)
+                            .background(Circle().fill(Color.white))
+                            .padding(4)
+                        }
+                      }
+                      .allowsHitTesting(false)  // Let gestures pass through thumbnails
+                  }
+
+                  // Add swap button if this isn't the last clip
+                  if index < viewModel.clips.count - 1 {
+                    Button(action: {
+                      viewModel.swapClips(at: index)
+                    }) {
+                      Image(systemName: "arrow.left.arrow.right")
+                        .frame(width: swapButtonSize, height: swapButtonSize)
+                        .background(Circle().fill(Color.blue))
+                        .foregroundColor(.white)
                     }
+                    .offset(x: swapButtonSize / 2)
+                    .zIndex(1)  // Ensure button appears above clips
+                    .allowsHitTesting(true)  // Keep swap buttons interactive
+                  }
                 }
               }
             }
-            .allowsHitTesting(false)  // Let gestures pass through to background
+            .allowsHitTesting(true)  // Allow interaction with swap buttons
 
             // Position indicator
             Rectangle()
@@ -248,79 +266,6 @@ struct VideoEditView: View {
 
         // Timeline with position indicator
         VideoTimelineView(viewModel: viewModel)
-
-        // Editing controls for selected clip
-        if let clip = viewModel.selectedClip {
-          ScrollView {
-            VStack(spacing: 24) {
-              // Audio control
-              GroupBox("Audio") {
-                VStack(spacing: 4) {
-                  HStack {
-                    Image(systemName: "speaker.fill")
-                    Slider(
-                      value: Binding(
-                        get: { clip.volume },
-                        set: { viewModel.updateClipVolume($0) }
-                      ),
-                      in: 0...2)
-                    Image(systemName: "speaker.wave.3.fill")
-                  }
-                  Text(String(format: "%.1fx", clip.volume))
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                }
-                .padding(.vertical, 8)
-              }
-
-              // Video adjustments
-              GroupBox("Adjustments") {
-                VStack(spacing: 16) {
-                  VStack(spacing: 4) {
-                    HStack {
-                      Image(systemName: "sun.min.fill")
-                      Slider(
-                        value: $viewModel.brightness,
-                        in: -1...1)
-                      Image(systemName: "sun.max.fill")
-                    }
-                    Text(String(format: "Brightness: %.1f", viewModel.brightness))
-                      .font(.caption)
-                      .foregroundColor(.gray)
-                  }
-
-                  VStack(spacing: 4) {
-                    HStack {
-                      Image(systemName: "circle.slash")
-                      Slider(
-                        value: $viewModel.contrast,
-                        in: 0...2)
-                      Image(systemName: "circle")
-                    }
-                    Text(String(format: "Contrast: %.1f", viewModel.contrast))
-                      .font(.caption)
-                      .foregroundColor(.gray)
-                  }
-
-                  VStack(spacing: 4) {
-                    HStack {
-                      Image(systemName: "drop.fill")
-                      Slider(
-                        value: $viewModel.saturation,
-                        in: 0...2)
-                      Image(systemName: "drop.fill").foregroundColor(.blue)
-                    }
-                    Text(String(format: "Saturation: %.1f", viewModel.saturation))
-                      .font(.caption)
-                      .foregroundColor(.gray)
-                  }
-                }
-                .padding(.vertical, 8)
-              }
-            }
-            .padding()
-          }
-        }
       }
       .navigationTitle("Edit Video")
       .navigationBarTitleDisplayMode(.inline)
@@ -360,12 +305,6 @@ struct VideoEditView: View {
     } message: {
       Text(viewModel.errorMessage ?? "Failed to export video")
     }
-  }
-
-  private func timeString(from seconds: Double) -> String {
-    let minutes = Int(seconds) / 60
-    let seconds = Int(seconds) % 60
-    return String(format: "%d:%02d", minutes, seconds)
   }
 }
 
