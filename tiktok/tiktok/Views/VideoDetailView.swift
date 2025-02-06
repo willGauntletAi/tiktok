@@ -193,52 +193,68 @@ struct VideoDetailView: View {
           .edgesIgnoringSafeArea(.all)
         }
 
+        // Right side buttons
+        VStack {
+          Spacer()
+          VStack(spacing: 20) {
+            // Like Button
+            Button(action: {
+              Task {
+                await viewModel.toggleLike()
+              }
+            }) {
+              Image(systemName: viewModel.isLiked ? "heart.fill" : "heart")
+                .font(.system(size: 28))
+                .foregroundColor(viewModel.isLiked ? .red : .white)
+                .shadow(radius: 2)
+            }
+            .disabled(viewModel.isLoading)
+            .accessibilityLabel("Like Video")
+            .accessibilityAddTraits(viewModel.isLiked ? .isSelected : [])
+            .overlay {
+              if viewModel.isLoading {
+                ProgressView()
+                  .progressViewStyle(CircularProgressViewStyle(tint: .white))
+              }
+            }
+
+            // Profile Button
+            Button(action: {
+              navigator.navigate(to: .userProfile(userId: instructorId))
+            }) {
+              VStack {
+                Image(systemName: "person.circle.fill")
+                  .font(.system(size: 28))
+                  .foregroundColor(.white)
+                  .shadow(radius: 2)
+
+                Text("@\(viewModel.instructorName)")
+                  .font(.caption)
+                  .foregroundColor(.white)
+                  .shadow(radius: 2)
+                  .lineLimit(1)
+              }
+            }
+            .accessibilityLabel("View Profile")
+            .accessibilityValue("@\(viewModel.instructorName)")
+          }
+          .frame(width: 80)
+          .padding(.trailing, 16)
+          Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+
         // Content Overlay
         VStack {
           Spacer()
           VStack(alignment: .leading, spacing: 8) {
-            // Title and Like Button
-            HStack {
-              VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                  .font(.title2)
-                  .fontWeight(.bold)
-                  .foregroundColor(.white)
-                  .shadow(radius: 2)
-
-                // Instructor Button
-                Button(action: {
-                  navigator.navigate(to: .userProfile(userId: instructorId))
-                }) {
-                  HStack {
-                    Image(systemName: "person.circle.fill")
-                      .foregroundColor(.white)
-                    Text("@\(viewModel.instructorName)")
-                      .font(.subheadline)
-                      .foregroundColor(.white)
-                  }
-                  .shadow(radius: 2)
-                }
-              }
-
-              Spacer()
-              Button(action: {
-                Task {
-                  await viewModel.toggleLike()
-                }
-              }) {
-                Image(systemName: viewModel.isLiked ? "heart.fill" : "heart")
-                  .font(.title2)
-                  .foregroundColor(viewModel.isLiked ? .red : .white)
-                  .shadow(radius: 2)
-              }
-              .disabled(viewModel.isLoading)
-              .overlay {
-                if viewModel.isLoading {
-                  ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                }
-              }
+            // Title
+            VStack(alignment: .leading, spacing: 4) {
+              Text(title)
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .shadow(radius: 2)
             }
 
             // Description
