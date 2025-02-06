@@ -3,7 +3,7 @@
     "options": {
         "bundleIdPrefix": "com.wilbertfeldman.tiktok",
         "deploymentTarget": {
-            "iOS": "16.0"
+            "iOS": "18.0"
         }
     },
     "packages": {
@@ -40,6 +40,10 @@
                 {
                     "package": "Firebase",
                     "product": "FirebaseFirestore"
+                },
+                {
+                    "package": "Firebase",
+                    "product": "FirebaseFunctions"
                 },
                 {
                     "package": "Firebase",

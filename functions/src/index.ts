@@ -4,6 +4,12 @@ import * as admin from "firebase-admin";
 
 admin.initializeApp();
 
+// Import all functions
+import { getRecommendations } from "./recommendations";
+
+// Export all functions
+export { getRecommendations };
+
 // Update user document when it's created
 export const onUserDocCreated = onDocumentCreated("users/{userId}", async (event) => {
   try {

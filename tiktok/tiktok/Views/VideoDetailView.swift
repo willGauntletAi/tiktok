@@ -6,20 +6,29 @@ struct VideoDetailView: View {
     let workoutPlan: WorkoutPlan
     let workoutIndex: Int?
     let exerciseIndex: Int?
+    let recommendations: [VideoRecommendation]?
+    @State private var nextRecommendations: [VideoRecommendation] = []
     @StateObject private var viewModel: VideoDetailViewModel
     @State private var player: AVPlayer?
     @State private var isExpanded = false
     @State private var firstLineDescription: String = ""
     @State private var fullDescription: String = ""
     @State private var showComments = false
+    @State private var isLoadingRecommendations = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.presentationMode) var presentationMode
     @EnvironmentObject private var navigator: Navigator
 
-    init(workoutPlan: WorkoutPlan, workoutIndex: Int?, exerciseIndex: Int?) {
+    private let recommendationService = RecommendationService()
+
+    init(
+        workoutPlan: WorkoutPlan, workoutIndex: Int? = nil, exerciseIndex: Int? = nil,
+        recommendations: [VideoRecommendation]? = nil
+    ) {
         self.workoutPlan = workoutPlan
         self.workoutIndex = workoutIndex
         self.exerciseIndex = exerciseIndex
+        self.recommendations = recommendations
 
         let videoId: String
         if let exerciseIndex = exerciseIndex,
@@ -115,8 +124,8 @@ struct VideoDetailView: View {
         // If we're viewing the workout plan video
         if workoutIndex == nil {
             if !workoutPlan.workouts.isEmpty {
-                NavigationUtil.navigate(
-                    to: VideoDetailView(
+                navigator.navigate(
+                    to: .videoDetail(
                         workoutPlan: workoutPlan,
                         workoutIndex: 0,
                         exerciseIndex: nil
@@ -130,8 +139,8 @@ struct VideoDetailView: View {
             let workout = workoutPlan.workouts[currentWorkoutIndex]
             // If there are more exercises in current workout
             if currentExerciseIndex + 1 < workout.workout.exercises.count {
-                NavigationUtil.navigate(
-                    to: VideoDetailView(
+                navigator.navigate(
+                    to: .videoDetail(
                         workoutPlan: workoutPlan,
                         workoutIndex: currentWorkoutIndex,
                         exerciseIndex: currentExerciseIndex + 1
@@ -139,8 +148,8 @@ struct VideoDetailView: View {
             }
             // If we're at last exercise but there are more workouts
             else if currentWorkoutIndex + 1 < workoutPlan.workouts.count {
-                NavigationUtil.navigate(
-                    to: VideoDetailView(
+                navigator.navigate(
+                    to: .videoDetail(
                         workoutPlan: workoutPlan,
                         workoutIndex: currentWorkoutIndex + 1,
                         exerciseIndex: nil
@@ -152,8 +161,8 @@ struct VideoDetailView: View {
             let workout = workoutPlan.workouts[currentWorkoutIndex]
             // Navigate to first exercise if available
             if !workout.workout.exercises.isEmpty {
-                NavigationUtil.navigate(
-                    to: VideoDetailView(
+                navigator.navigate(
+                    to: .videoDetail(
                         workoutPlan: workoutPlan,
                         workoutIndex: currentWorkoutIndex,
                         exerciseIndex: 0
@@ -161,14 +170,84 @@ struct VideoDetailView: View {
             }
             // Otherwise try to navigate to next workout
             else if currentWorkoutIndex + 1 < workoutPlan.workouts.count {
-                NavigationUtil.navigate(
-                    to: VideoDetailView(
+                navigator.navigate(
+                    to: .videoDetail(
                         workoutPlan: workoutPlan,
                         workoutIndex: currentWorkoutIndex + 1,
                         exerciseIndex: nil
                     ))
             }
         }
+    }
+
+    private func loadNextRecommendations() async {
+        guard !isLoadingRecommendations else {
+            print("⚠️ Already loading recommendations, skipping")
+            return
+        }
+
+        print("🎬 Starting to load next recommendations")
+        print("🎬 Current recommendations count: \(recommendations?.count ?? 0)")
+
+        isLoadingRecommendations = true
+        defer { isLoadingRecommendations = false }
+
+        do {
+            // If we have recommendations, use them to get more recommendations
+            if let recommendations = recommendations {
+                print("🎬 Using existing recommendations to get more")
+                let videoIds = recommendations.prefix(4).map { $0.videoId }
+                print("🎬 Using videoIds: \(videoIds)")
+                nextRecommendations = try await recommendationService.getRecommendations(
+                    forVideos: Array(videoIds))
+            } else {
+                print("🎬 No existing recommendations, getting fresh ones")
+                nextRecommendations = try await recommendationService.getRecommendations()
+            }
+
+            print("🎬 Successfully loaded \(nextRecommendations.count) recommendations")
+            if let firstRec = nextRecommendations.first {
+                print(
+                    "🎬 First recommendation videoId: \(firstRec.videoId), has video: \(firstRec.video != nil)"
+                )
+            }
+        } catch {
+            print("❌ Error loading recommendations: \(error)")
+        }
+    }
+
+    private func navigateToNextVideo() {
+        print("🎬 Attempting to navigate to next video")
+
+        // First try to use the initial recommendations if available
+        if let recommendations = recommendations, !recommendations.isEmpty {
+            print("🎬 Using initial recommendations")
+            if let nextVideo = recommendations.first?.video {
+                print("🎬 Navigating to video: \(nextVideo.id)")
+                navigator.navigate(
+                    to: .recommendedVideo(
+                        video: nextVideo,
+                        recommendations: Array(recommendations.dropFirst())
+                    ))
+                return
+            }
+        }
+
+        // Fall back to next recommendations if initial recommendations are empty or exhausted
+        if !nextRecommendations.isEmpty {
+            print("🎬 Using next recommendations")
+            if let nextVideo = nextRecommendations.first?.video {
+                print("🎬 Navigating to video: \(nextVideo.id)")
+                navigator.navigate(
+                    to: .recommendedVideo(
+                        video: nextVideo,
+                        recommendations: Array(nextRecommendations.dropFirst())
+                    ))
+                return
+            }
+        }
+
+        print("❌ No recommendations available")
     }
 
     var body: some View {
@@ -368,13 +447,26 @@ struct VideoDetailView: View {
             .simultaneousGesture(
                 DragGesture()
                     .onEnded { value in
+                        print("🎬 Drag gesture ended")
+                        print("🎬 Translation: \(value.translation)")
+                        print("🎬 Available recommendations: \(nextRecommendations.count)")
+
                         if value.startLocation.x < 50, value.translation.width > 100 {
+                            print("🎬 Dismissing view")
                             dismiss()
                         } else if value.translation.width < -50 {
+                            print("🎬 Navigating to next in sequence")
                             navigateToNext()
+                        } else if value.translation.height < -50 {
+                            print("🎬 Swiping up for next recommended video")
+                            navigateToNextVideo()
                         }
                     }
             )
+            .task {
+                print("🎬 View appeared, loading recommendations")
+                await loadNextRecommendations()
+            }
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .tabBar)
@@ -400,33 +492,6 @@ struct VideoDetailView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-    }
-}
-
-// Helper for programmatic navigation
-private enum NavigationUtil {
-    static func navigate<V: View>(to view: V) {
-        let window = UIApplication.shared.windows.first { $0.isKeyWindow }
-        if let rootViewController = window?.rootViewController,
-           let navigationController = rootViewController.findNavigationController()
-        {
-            let hostingController = UIHostingController(rootView: view)
-            navigationController.pushViewController(hostingController, animated: true)
-        }
-    }
-}
-
-extension UIViewController {
-    func findNavigationController() -> UINavigationController? {
-        if let nav = self as? UINavigationController {
-            return nav
-        }
-        for child in children {
-            if let nav = child.findNavigationController() {
-                return nav
-            }
-        }
-        return parent?.findNavigationController()
     }
 }
 
