@@ -18,19 +18,37 @@ struct ContentView: View {
     Group {
       if authService.isAuthenticated {
         TabView(selection: $selectedTab) {
-          NavigationStack {
+          NavigationStack(path: $navigator.path) {
             SearchView()
+              .navigationDestination(for: AppRoute.self) { route in
+                switch route {
+                case .profile:
+                  ProfileView()
+                case .userProfile(let userId):
+                  ProfileView(userId: userId)
+                }
+              }
           }
           .tabItem {
             Label("Search", systemImage: "magnifyingglass")
           }
           .tag(0)
 
-          CreateSelectionView()
-            .tabItem {
-              Label("Create", systemImage: "plus.square")
-            }
-            .tag(1)
+          NavigationStack(path: $navigator.path) {
+            CreateSelectionView()
+              .navigationDestination(for: AppRoute.self) { route in
+                switch route {
+                case .profile:
+                  ProfileView()
+                case .userProfile(let userId):
+                  ProfileView(userId: userId)
+                }
+              }
+          }
+          .tabItem {
+            Label("Create", systemImage: "plus.square")
+          }
+          .tag(1)
 
           NavigationStack(path: $navigator.path) {
             ProfileView()
@@ -38,6 +56,8 @@ struct ContentView: View {
                 switch route {
                 case .profile:
                   ProfileView()
+                case .userProfile(let userId):
+                  ProfileView(userId: userId)
                 }
               }
           }

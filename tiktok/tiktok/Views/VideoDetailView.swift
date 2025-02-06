@@ -13,6 +13,7 @@ struct VideoDetailView: View {
   @State private var fullDescription: String = ""
   @Environment(\.dismiss) private var dismiss
   @Environment(\.presentationMode) var presentationMode
+  @EnvironmentObject private var navigator: Navigator
 
   init(workoutPlan: WorkoutPlan, workoutIndex: Int?, exerciseIndex: Int?) {
     self.workoutPlan = workoutPlan
@@ -99,6 +100,16 @@ struct VideoDetailView: View {
     }
   }
 
+  private var instructorId: String {
+    if let exercise = currentExercise {
+      return exercise.instructorId
+    } else if let workout = currentWorkout {
+      return workout.instructorId
+    } else {
+      return workoutPlan.instructorId
+    }
+  }
+
   private func navigateToNext() {
     // If we're viewing the workout plan video
     if workoutIndex == nil {
@@ -170,12 +181,10 @@ struct VideoDetailView: View {
               .frame(width: geometry.size.width, height: geometry.size.height)
               .aspectRatio(contentMode: .fit)
               .onAppear {
-                // Initialize player and start playback
                 player = AVPlayer(url: videoUrl)
                 player?.play()
               }
               .onDisappear {
-                // Stop and clean up player when view disappears
                 player?.pause()
                 player = nil
               }
@@ -184,17 +193,34 @@ struct VideoDetailView: View {
           .edgesIgnoringSafeArea(.all)
         }
 
-        // Overlay content
+        // Content Overlay
         VStack {
           Spacer()
           VStack(alignment: .leading, spacing: 8) {
             // Title and Like Button
             HStack {
-              Text(title)
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-                .shadow(radius: 2)
+              VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                  .font(.title2)
+                  .fontWeight(.bold)
+                  .foregroundColor(.white)
+                  .shadow(radius: 2)
+
+                // Instructor Button
+                Button(action: {
+                  navigator.navigate(to: .userProfile(userId: instructorId))
+                }) {
+                  HStack {
+                    Image(systemName: "person.circle.fill")
+                      .foregroundColor(.white)
+                    Text("@\(viewModel.instructorName)")
+                      .font(.subheadline)
+                      .foregroundColor(.white)
+                  }
+                  .shadow(radius: 2)
+                }
+              }
+
               Spacer()
               Button(action: {
                 Task {
@@ -256,7 +282,6 @@ struct VideoDetailView: View {
               startPoint: .bottom,
               endPoint: .top
             )
-            .allowsHitTesting(false)
           )
           .fixedSize(horizontal: false, vertical: true)
           .frame(maxWidth: isExpanded ? .infinity : geometry.size.width * 0.8)
@@ -281,12 +306,9 @@ struct VideoDetailView: View {
       .simultaneousGesture(
         DragGesture()
           .onEnded { value in
-            // Handle left edge swipe for back navigation
             if value.startLocation.x < 50 && value.translation.width > 100 {
               dismiss()
-            }
-            // Handle right to left swipe for next video
-            else if value.translation.width < -50 {
+            } else if value.translation.width < -50 {
               navigateToNext()
             }
           }
@@ -295,7 +317,6 @@ struct VideoDetailView: View {
     .navigationBarBackButtonHidden(true)
     .toolbar(.hidden, for: .tabBar)
     .onAppear {
-      // Set up description text
       fullDescription = description
       if let firstLine = description.components(separatedBy: .newlines).first {
         firstLineDescription = firstLine

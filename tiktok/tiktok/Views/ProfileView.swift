@@ -1,8 +1,14 @@
+import FirebaseAuth
 import SwiftUI
 
 struct ProfileView: View {
-  @StateObject private var viewModel = ProfileViewModel()
+  @StateObject private var viewModel: ProfileViewModel
   @State private var selectedTab = 0
+  @EnvironmentObject private var navigator: Navigator
+
+  init(userId: String? = nil) {
+    _viewModel = StateObject(wrappedValue: ProfileViewModel(userId: userId))
+  }
 
   var body: some View {
     ScrollView {
@@ -10,6 +16,12 @@ struct ProfileView: View {
         // Profile Header
         if let user = viewModel.user {
           ProfileHeaderView(user: user)
+            .onTapGesture {
+              // Only show follow button if this is not the current user's profile
+              if viewModel.userId != nil {
+                // TODO: Implement follow functionality
+              }
+            }
         }
 
         // Content Tabs
@@ -46,21 +58,26 @@ struct ProfileView: View {
           }
         }
       }
-      .navigationTitle("Profile")
+      .navigationTitle(
+        viewModel.userId == nil ? "Profile" : "@\(viewModel.user?.displayName ?? "")"
+      )
       .toolbar {
-        ToolbarItem(placement: .navigationBarTrailing) {
-          Menu {
-            Button(
-              role: .destructive,
-              action: {
-                viewModel.signOut()
+        // Only show settings menu for current user's profile
+        if viewModel.userId == nil {
+          ToolbarItem(placement: .navigationBarTrailing) {
+            Menu {
+              Button(
+                role: .destructive,
+                action: {
+                  viewModel.signOut()
+                }
+              ) {
+                Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
               }
-            ) {
-              Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
+            } label: {
+              Image(systemName: "gearshape.fill")
+                .foregroundColor(.primary)
             }
-          } label: {
-            Image(systemName: "gearshape.fill")
-              .foregroundColor(.primary)
           }
         }
       }
@@ -88,6 +105,7 @@ struct ProfileView: View {
 
 struct ProfileHeaderView: View {
   let user: ProfileViewModel.User
+  @State private var isFollowing = false  // Add state for follow button
 
   var body: some View {
     VStack(spacing: 16) {
@@ -114,6 +132,23 @@ struct ProfileHeaderView: View {
         Text("Member since \(user.createdAt.formatted(.dateTime.month().year()))")
           .font(.caption)
           .foregroundColor(.gray)
+
+        // Follow Button (only show for other users' profiles)
+        if user.id != Auth.auth().currentUser?.uid {
+          Button(action: {
+            isFollowing.toggle()
+            // TODO: Implement follow/unfollow functionality
+          }) {
+            Text(isFollowing ? "Following" : "Follow")
+              .font(.subheadline)
+              .fontWeight(.semibold)
+              .foregroundColor(isFollowing ? .primary : .white)
+              .padding(.horizontal, 24)
+              .padding(.vertical, 8)
+              .background(isFollowing ? Color.gray.opacity(0.2) : Color.blue)
+              .cornerRadius(20)
+          }
+        }
       }
     }
     .padding()
@@ -139,127 +174,6 @@ struct TabButton: View {
     }
     .frame(maxWidth: .infinity)
     .padding(.vertical, 8)
-  }
-}
-
-struct VideoGridView: View {
-  let videos: [ProfileViewModel.Video]
-  let columns = [
-    GridItem(.flexible(), spacing: 1),
-    GridItem(.flexible(), spacing: 1),
-    GridItem(.flexible(), spacing: 1),
-  ]
-
-  var body: some View {
-    ScrollView {
-      LazyVGrid(columns: columns, spacing: 1) {
-        ForEach(videos) { video in
-          NavigationLink(
-            destination: VideoDetailView(
-              workoutPlan: WorkoutPlan(
-                id: UUID().uuidString,
-                title: video.title,
-                description: video.description,
-                instructorId: video.instructorId,
-                videoUrl: video.videoUrl,
-                thumbnailUrl: video.thumbnailUrl,
-                difficulty: Difficulty(rawValue: video.difficulty.rawValue) ?? .beginner,
-                targetMuscles: video.targetMuscles,
-                workouts: [
-                  WorkoutWithMetadata(
-                    workout: Workout(
-                      id: UUID().uuidString,
-                      title: video.title,
-                      description: video.description,
-                      exercises: [
-                        Exercise(
-                          id: video.id,
-                          type: video.type.rawValue,
-                          title: video.title,
-                          description: video.description,
-                          instructorId: video.instructorId,
-                          videoUrl: video.videoUrl,
-                          thumbnailUrl: video.thumbnailUrl,
-                          difficulty: Difficulty(rawValue: video.difficulty.rawValue) ?? .beginner,
-                          targetMuscles: video.targetMuscles,
-                          duration: 0,
-                          createdAt: video.createdAt,
-                          updatedAt: video.updatedAt
-                        )
-                      ],
-                      instructorId: video.instructorId,
-                      videoUrl: video.videoUrl,
-                      thumbnailUrl: video.thumbnailUrl,
-                      difficulty: Difficulty(rawValue: video.difficulty.rawValue) ?? .beginner,
-                      targetMuscles: video.targetMuscles,
-                      totalDuration: 0,
-                      createdAt: video.createdAt,
-                      updatedAt: video.updatedAt
-                    ),
-                    weekNumber: 1,
-                    dayOfWeek: 1
-                  )
-                ],
-                duration: 1,
-                createdAt: video.createdAt,
-                updatedAt: video.updatedAt
-              ),
-              workoutIndex: 0,
-              exerciseIndex: 0
-            )
-          ) {
-            VideoThumbnailView(video: video)
-              .frame(height: UIScreen.main.bounds.width / 3)
-          }
-        }
-      }
-      .padding(.horizontal, 1)
-    }
-  }
-}
-
-struct VideoThumbnailView: View {
-  let video: ProfileViewModel.Video
-
-  var body: some View {
-    GeometryReader { geometry in
-      AsyncImage(url: URL(string: video.thumbnailUrl)) { phase in
-        switch phase {
-        case .empty:
-          ZStack {
-            Color.gray.opacity(0.2)
-            ProgressView()
-          }
-
-        case .success(let image):
-          image
-            .resizable()
-            .aspectRatio(contentMode: .fill)
-            .frame(width: geometry.size.width, height: geometry.size.height)
-
-        case .failure:
-          ZStack {
-            Color.gray.opacity(0.2)
-            Image(systemName: "exclamationmark.triangle")
-              .foregroundColor(.gray)
-          }
-
-        @unknown default:
-          Color.gray.opacity(0.2)
-        }
-      }
-      .clipped()
-      .overlay(alignment: .bottomLeading) {
-        Text(video.type.rawValue.capitalized)
-          .font(.caption2)
-          .padding(.horizontal, 6)
-          .padding(.vertical, 2)
-          .background(Color.black.opacity(0.6))
-          .foregroundColor(.white)
-          .cornerRadius(4)
-          .padding(4)
-      }
-    }
   }
 }
 

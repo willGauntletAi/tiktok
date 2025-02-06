@@ -1,7 +1,8 @@
 import SwiftUI
 
 enum AppRoute: Hashable {
-  case profile
+  case profile  // Current user's profile
+  case userProfile(userId: String)  // Other user's profile
   // Add additional routes as needed
 }
 

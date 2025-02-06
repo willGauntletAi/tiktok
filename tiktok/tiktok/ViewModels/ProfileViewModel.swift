@@ -9,8 +9,14 @@ class ProfileViewModel: ObservableObject {
   @Published var likedVideos: [Video] = []
   @Published var isLoading = false
   @Published var error: String?
+  let userId: String?  // nil means current user
 
   private let db = Firestore.firestore()
+  private let auth = Auth.auth()
+
+  init(userId: String? = nil) {
+    self.userId = userId
+  }
 
   struct User {
     let id: String
@@ -50,47 +56,63 @@ class ProfileViewModel: ObservableObject {
     isLoading = true
     error = nil
 
-    guard let currentUser = Auth.auth().currentUser else {
-      error = "No user logged in"
-      isLoading = false
-      return
-    }
-
     do {
-      let userDoc = try await db.collection("users").document(currentUser.uid).getDocument()
-      if let userData = userDoc.data() {
-        user = User(
-          id: currentUser.uid,
-          email: userData["email"] as? String ?? "",
-          displayName: userData["displayName"] as? String ?? "",
-          createdAt: (userData["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
-          updatedAt: (userData["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
-        )
+      let targetUserId = userId ?? auth.currentUser?.uid
+      guard let targetUserId = targetUserId else {
+        error = "No authenticated user"
+        isLoading = false
+        return
       }
 
-      // Fetch user's created videos
+      // Fetch user data
+      let userDoc = try await db.collection("users").document(targetUserId).getDocument()
+      guard let userData = userDoc.data() else {
+        error = "User data not found"
+        isLoading = false
+        return
+      }
+
+      // Create user object
+      user = User(
+        id: userDoc.documentID,
+        email: userData["email"] as? String ?? "",
+        displayName: userData["displayName"] as? String ?? "",
+        createdAt: (userData["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
+        updatedAt: (userData["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
+      )
+
+      // Fetch user's videos
       let videosQuery = db.collection("videos")
-        .whereField("instructorId", isEqualTo: currentUser.uid)
+        .whereField("instructorId", isEqualTo: targetUserId)
+        .order(by: "createdAt", descending: true)
+
       let videosDocs = try await videosQuery.getDocuments()
       userVideos = videosDocs.documents.compactMap { doc in
         createVideoFromDoc(doc)
       }
 
-      // Fetch user's liked videos
-      let likesQuery = db.collection("likes")
-        .whereField("userId", isEqualTo: currentUser.uid)
-      let likesDocs = try await likesQuery.getDocuments()
-      let videoIds = likesDocs.documents.compactMap { $0.data()["videoId"] as? String }
+      // Fetch liked videos only for current user
+      if userId == nil {
+        let likedVideosQuery = db.collection("likes")
+          .whereField("userId", isEqualTo: targetUserId)
+          .order(by: "createdAt", descending: true)
 
-      // Fetch the actual videos that were liked
-      likedVideos = []
-      for videoId in videoIds {
-        if let videoDoc = try? await db.collection("videos").document(videoId).getDocument(),
-          let video = createVideoFromDoc(videoDoc)
-        {
-          likedVideos.append(video)
+        let likedDocs = try await likedVideosQuery.getDocuments()
+        let videoIds = likedDocs.documents.compactMap { $0.data()["videoId"] as? String }
+
+        // Fetch the actual video documents
+        likedVideos = []
+        for videoId in videoIds {
+          if let doc = try? await db.collection("videos").document(videoId).getDocument(),
+            let data = doc.data()
+          {
+            if let video = createVideoFromDoc(doc) {
+              likedVideos.append(video)
+            }
+          }
         }
       }
+
     } catch {
       self.error = error.localizedDescription
     }
@@ -116,8 +138,9 @@ class ProfileViewModel: ObservableObject {
   }
 
   func signOut() {
+    guard userId == nil else { return }  // Only allow sign out from current user's profile
     do {
-      try Auth.auth().signOut()
+      try auth.signOut()
       // Clear user data after logout
       user = nil
       userVideos = []

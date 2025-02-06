@@ -7,15 +7,34 @@ class VideoDetailViewModel: ObservableObject {
   @Published var isLiked = false
   @Published var isLoading = false
   @Published var error: String?
+  @Published var instructorName: String = ""
 
   private let db = Firestore.firestore()
   private let videoId: String
   private var likeDocument: DocumentReference?
+  private let auth = Auth.auth()
 
   init(videoId: String) {
     self.videoId = videoId
     Task {
       await checkIfLiked()
+      await fetchInstructorName()
+    }
+  }
+
+  private func fetchInstructorName() async {
+    do {
+      // First get the video to get the instructorId
+      let videoDoc = try await db.collection("videos").document(videoId).getDocument()
+      guard let instructorId = videoDoc.data()?["instructorId"] as? String else { return }
+
+      // Then fetch the instructor's user document
+      let userDoc = try await db.collection("users").document(instructorId).getDocument()
+      if let displayName = userDoc.data()?["displayName"] as? String {
+        self.instructorName = displayName
+      }
+    } catch {
+      self.error = "Failed to fetch instructor details: \(error.localizedDescription)"
     }
   }
 
