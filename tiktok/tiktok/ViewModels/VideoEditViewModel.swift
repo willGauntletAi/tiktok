@@ -4,8 +4,8 @@ import UIKit
 
 @MainActor
 class VideoEditViewModel: ObservableObject {
-  @Published var videoAsset: AVAsset?
-  @Published var videoThumbnail: UIImage?
+  @Published var clips: [VideoClip] = []
+  @Published var selectedClipIndex: Int?
   @Published var isProcessing = false
   @Published var errorMessage: String?
   @Published var duration: Double = 0
@@ -16,7 +16,7 @@ class VideoEditViewModel: ObservableObject {
     didSet { updatePlayerTime() }
   }
 
-  // Video editing properties
+  // Current clip editing properties
   @Published var brightness: Double = 0 {
     didSet { updatePlayerItem() }
   }
@@ -30,68 +30,79 @@ class VideoEditViewModel: ObservableObject {
     didSet { updatePlayerVolume() }
   }
 
-  private var player: AVPlayer?
+  // Make player accessible to the view
+  var player: AVPlayer? {
+    get { _player }
+  }
+  private var _player: AVPlayer?
   private var playerItem: AVPlayerItem?
   private var timeObserver: Any?
   private var videoTrack: AVAssetTrack?
 
-  func loadVideo(from url: URL) async {
+  var totalDuration: Double {
+    clips.reduce(0) { $0 + ($1.endTime - $1.startTime) }
+  }
+
+  func addClip(from url: URL) async throws {
     isProcessing = true
+    defer { isProcessing = false }
+
     do {
       let asset = AVAsset(url: url)
-      self.videoAsset = asset
 
       // Get video duration
       let duration = try await asset.load(.duration)
-      self.duration = duration.seconds
-      self.endTime = duration.seconds
 
       // Generate thumbnail
       let imageGenerator = AVAssetImageGenerator(asset: asset)
       imageGenerator.appliesPreferredTrackTransform = true
       let cgImage = try imageGenerator.copyCGImage(at: .zero, actualTime: nil)
-      self.videoThumbnail = UIImage(cgImage: cgImage)
+      let thumbnail = UIImage(cgImage: cgImage)
 
-      // Setup player with initial composition
-      try await setupPlayer(with: asset)
+      // Create new clip
+      var clip = VideoClip(asset: asset, thumbnail: thumbnail)
+      clip.endTime = duration.seconds
+
+      // Add to clips array
+      clips.append(clip)
+      selectedClipIndex = clips.count - 1
+
+      // Setup player for the new clip
+      try await setupPlayer(with: clip)
 
     } catch {
-      errorMessage = "Failed to load video: \(error.localizedDescription)"
+      throw error
     }
-    isProcessing = false
   }
 
-  private func setupPlayer(with asset: AVAsset) async throws {
+  private func setupPlayer(with clip: VideoClip) async throws {
     // Remove existing time observer
     if let timeObserver = timeObserver {
-      player?.removeTimeObserver(timeObserver)
+      _player?.removeTimeObserver(timeObserver)
       self.timeObserver = nil
     }
 
-    // Load video track
-    let tracks = try await asset.loadTracks(withMediaType: .video)
-    self.videoTrack = tracks.first
-
     // Create new player item with the asset
-    let playerItem = AVPlayerItem(asset: asset)
+    let playerItem = AVPlayerItem(asset: clip.asset)
     self.playerItem = playerItem
 
     // Create and configure player
     let player = AVPlayer(playerItem: playerItem)
-    self.player = player
+    self._player = player
 
     // Add time observer
     let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
     timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) {
       [weak self] time in
-      guard let self = self else { return }
+      guard let self = self,
+        let currentClip = self.selectedClip
+      else { return }
+
       let currentTime = time.seconds
-      if currentTime >= self.endTime {
-        // Loop back to start time when reaching end time
-        // Using @MainActor ensures we're on the main thread
+      if currentTime >= currentClip.endTime {
         Task { @MainActor in
-          if let player = self.player {
-            await player.seek(to: CMTime(seconds: self.startTime, preferredTimescale: 600))
+          if let player = self._player {
+            await player.seek(to: CMTime(seconds: currentClip.startTime, preferredTimescale: 600))
             player.play()
           }
         }
@@ -100,11 +111,11 @@ class VideoEditViewModel: ObservableObject {
 
     // Set initial volume and seek to start
     updatePlayerVolume()
-    await player.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
+    await player.seek(to: CMTime(seconds: clip.startTime, preferredTimescale: 600))
   }
 
   private func updatePlayerTime() {
-    guard let player = player else { return }
+    guard let player = _player else { return }
     Task { @MainActor in
       await player.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
       player.play()
@@ -112,7 +123,8 @@ class VideoEditViewModel: ObservableObject {
   }
 
   private func updatePlayerVolume() {
-    player?.volume = Float(volume)
+    guard let clip = selectedClip else { return }
+    _player?.volume = Float(clip.volume)
   }
 
   private func updatePlayerItem() {
@@ -121,13 +133,58 @@ class VideoEditViewModel: ObservableObject {
     // using AVVideoComposition and CIFilters
   }
 
-  func getPlayer() -> AVPlayer? {
-    return player
+  var selectedClip: VideoClip? {
+    guard let index = selectedClipIndex, clips.indices.contains(index) else { return nil }
+    return clips[index]
+  }
+
+  func updateClipTrim(startTime: Double, endTime: Double) {
+    guard var clip = selectedClip,
+      let index = selectedClipIndex
+    else { return }
+
+    clip.startTime = startTime
+    clip.endTime = endTime
+    clips[index] = clip
+
+    // Update player position if needed
+    Task { @MainActor in
+      if let player = _player {
+        await player.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
+      }
+    }
+  }
+
+  func updateClipVolume(_ volume: Double) {
+    guard var clip = selectedClip,
+      let index = selectedClipIndex
+    else { return }
+
+    clip.volume = volume
+    clips[index] = clip
+    updatePlayerVolume()
+  }
+
+  func moveClip(from source: IndexSet, to destination: Int) {
+    clips.move(fromOffsets: source, toOffset: destination)
+    if let selected = selectedClipIndex,
+      let sourceFirst = source.first
+    {
+      selectedClipIndex = sourceFirst < selected ? (selected - 1) : (selected + 1)
+    }
+  }
+
+  func deleteClip(at index: Int) {
+    clips.remove(at: index)
+    if selectedClipIndex == index {
+      selectedClipIndex = clips.isEmpty ? nil : min(index, clips.count - 1)
+    }
   }
 
   func exportVideo() async throws -> URL {
-    guard let asset = videoAsset else {
-      throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "No video loaded"])
+    guard !clips.isEmpty else {
+      throw NSError(
+        domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "No clips to export"])
     }
 
     isProcessing = true
@@ -136,19 +193,6 @@ class VideoEditViewModel: ObservableObject {
     // Create composition
     let composition = AVMutableComposition()
     let videoComposition = AVMutableVideoComposition()
-
-    // Load tracks
-    let tracks = try await (
-      video: asset.loadTracks(withMediaType: .video).first,
-      audio: asset.loadTracks(withMediaType: .audio).first
-    )
-
-    guard let videoTrack = tracks.video,
-      let audioTrack = tracks.audio
-    else {
-      throw NSError(
-        domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to load video tracks"])
-    }
 
     // Create composition tracks
     guard
@@ -164,93 +208,118 @@ class VideoEditViewModel: ObservableObject {
         userInfo: [NSLocalizedDescriptionKey: "Failed to create composition tracks"])
     }
 
-    // Set time range
-    let timeRange = CMTimeRange(
-      start: CMTime(seconds: startTime, preferredTimescale: 600),
-      end: CMTime(seconds: endTime, preferredTimescale: 600))
+    var currentTime = CMTime.zero
+    var instructions: [AVMutableVideoCompositionInstruction] = []
+    var audioMixParameters: [AVMutableAudioMixInputParameters] = []
 
-    do {
-      // Add video and audio tracks to composition
-      try compositionVideoTrack.insertTimeRange(timeRange, of: videoTrack, at: .zero)
-      try compositionAudioTrack.insertTimeRange(timeRange, of: audioTrack, at: .zero)
+    // Process each clip
+    for clip in clips {
+      do {
+        // Load tracks for current clip
+        let videoTrack = try await clip.asset.loadTracks(withMediaType: .video).first
+        let audioTrack = try await clip.asset.loadTracks(withMediaType: .audio).first
 
-      // Get the video track's preferred transform
-      let originalTransform = try await videoTrack.load(.preferredTransform)
+        guard let videoTrack = videoTrack, let audioTrack = audioTrack else { continue }
 
-      // Get the video track size
+        // Calculate time range for the clip
+        let timeRange = CMTimeRange(
+          start: CMTime(seconds: clip.startTime, preferredTimescale: 600),
+          end: CMTime(seconds: clip.endTime, preferredTimescale: 600)
+        )
+        let clipDuration = timeRange.duration
+
+        // Insert tracks into composition
+        try compositionVideoTrack.insertTimeRange(timeRange, of: videoTrack, at: currentTime)
+        try compositionAudioTrack.insertTimeRange(timeRange, of: audioTrack, at: currentTime)
+
+        // Create instruction for this clip
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = CMTimeRange(start: currentTime, duration: clipDuration)
+
+        // Get and apply the original transform
+        let originalTransform = try await videoTrack.load(.preferredTransform)
+        let naturalSize = try await videoTrack.load(.naturalSize)
+
+        let layerInstruction = AVMutableVideoCompositionLayerInstruction(
+          assetTrack: compositionVideoTrack)
+        layerInstruction.setTransform(originalTransform, at: currentTime)
+        instruction.layerInstructions = [layerInstruction]
+        instructions.append(instruction)
+
+        // Setup audio parameters
+        let audioParams = AVMutableAudioMixInputParameters(track: compositionAudioTrack)
+        audioParams.setVolume(Float(clip.volume), at: currentTime)
+        audioMixParameters.append(audioParams)
+
+        // Update current time for next clip
+        currentTime = CMTimeAdd(currentTime, clipDuration)
+
+      } catch {
+        print("Error processing clip: \(error)")
+        continue
+      }
+    }
+
+    // Setup video composition
+    if let firstClip = clips.first,
+      let videoTrack = try? await firstClip.asset.loadTracks(withMediaType: .video).first
+    {
       let naturalSize = try await videoTrack.load(.naturalSize)
+      let transform = try await videoTrack.load(.preferredTransform)
 
-      // Determine the correct render size based on the transform
-      let isVideoPortrait = originalTransform.a == 0 && abs(originalTransform.b) == 1
+      let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
       let renderWidth = isVideoPortrait ? naturalSize.height : naturalSize.width
       let renderHeight = isVideoPortrait ? naturalSize.width : naturalSize.height
 
-      // Setup video composition
       videoComposition.renderSize = CGSize(width: renderWidth, height: renderHeight)
       videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+      videoComposition.instructions = instructions
+    }
 
-      // Create instruction
-      let instruction = AVMutableVideoCompositionInstruction()
-      instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
+    // Create temporary URL for export
+    let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "\(UUID().uuidString).mp4")
 
-      let layerInstruction = AVMutableVideoCompositionLayerInstruction(
-        assetTrack: compositionVideoTrack)
+    // Setup export session
+    guard
+      let exportSession = AVAssetExportSession(
+        asset: composition,
+        presetName: AVAssetExportPresetHighestQuality)
+    else {
+      throw NSError(
+        domain: "", code: -1,
+        userInfo: [NSLocalizedDescriptionKey: "Failed to create export session"])
+    }
 
-      // Apply the original transform to maintain orientation
-      layerInstruction.setTransform(originalTransform, at: .zero)
+    exportSession.outputURL = outputURL
+    exportSession.outputFileType = .mp4
+    exportSession.videoComposition = videoComposition
 
-      instruction.layerInstructions = [layerInstruction]
-      videoComposition.instructions = [instruction]
+    // Set audio mix
+    let audioMix = AVMutableAudioMix()
+    audioMix.inputParameters = audioMixParameters
+    exportSession.audioMix = audioMix
 
-      // Create temporary URL for export
-      let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "\(UUID().uuidString).mp4")
+    // Export the video
+    await exportSession.export()
 
-      // Setup export session
-      guard
-        let exportSession = AVAssetExportSession(
-          asset: composition,
-          presetName: AVAssetExportPresetHighestQuality)
-      else {
-        throw NSError(
-          domain: "", code: -1,
-          userInfo: [NSLocalizedDescriptionKey: "Failed to create export session"])
-      }
-
-      exportSession.outputURL = outputURL
-      exportSession.outputFileType = .mp4
-      exportSession.videoComposition = videoComposition
-
-      // Set audio mix for volume adjustment
-      let audioMix = AVMutableAudioMix()
-      let audioParameters = AVMutableAudioMixInputParameters(track: compositionAudioTrack)
-      audioParameters.setVolume(Float(volume), at: .zero)
-      audioMix.inputParameters = [audioParameters]
-      exportSession.audioMix = audioMix
-
-      // Export the video
-      await exportSession.export()
-
-      if let error = exportSession.error {
-        throw error
-      }
-
-      return outputURL
-    } catch {
+    if let error = exportSession.error {
       throw error
     }
+
+    return outputURL
   }
 
   func cleanup() {
     if let timeObserver = timeObserver {
-      player?.removeTimeObserver(timeObserver)
+      _player?.removeTimeObserver(timeObserver)
       self.timeObserver = nil
     }
-    player?.pause()
-    player = nil
+    _player?.pause()
+    _player = nil
     playerItem = nil
-    videoAsset = nil
-    videoTrack = nil
+    clips.removeAll()
+    selectedClipIndex = nil
   }
 }
 

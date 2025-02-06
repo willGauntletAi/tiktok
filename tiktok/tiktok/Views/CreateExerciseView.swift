@@ -3,13 +3,53 @@ import FirebaseStorage
 import PhotosUI
 import SwiftUI
 
+struct MuscleSelectorView: View {
+  let muscleGroups: [String]
+  @Binding var selectedMuscles: [String]
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    NavigationStack {
+      List(muscleGroups, id: \.self) { muscle in
+        let isSelected = selectedMuscles.contains(muscle)
+        Button(action: {
+          if isSelected {
+            selectedMuscles.removeAll { $0 == muscle }
+          } else {
+            selectedMuscles.append(muscle)
+          }
+        }) {
+          HStack {
+            Text(muscle)
+            Spacer()
+            if isSelected {
+              Image(systemName: "checkmark")
+                .foregroundColor(.blue)
+            }
+          }
+        }
+        .buttonStyle(PlainButtonStyle())
+      }
+      .navigationTitle("Select Muscles")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .navigationBarTrailing) {
+          Button("Done") {
+            dismiss()
+          }
+        }
+      }
+    }
+  }
+}
+
 struct CreateExerciseView: View {
   @StateObject private var viewModel = CreateExerciseViewModel()
   @State private var showingMuscleSelector = false
   @State private var showVideoEditor = false
   @State private var selectedVideoForEdit: PhotosPickerItem?
   @FocusState private var focusedField: Field?
-  @Environment(\.presentationMode) var presentationMode
+  @Environment(\.dismiss) private var dismiss
 
   enum Field {
     case title
@@ -25,173 +65,151 @@ struct CreateExerciseView: View {
   ]
 
   var body: some View {
-    ScrollView {
-      VStack(spacing: 20) {
-        GroupBox(label: Text("Video").bold()) {
-          VStack {
-            if viewModel.isUploading {
-              ProgressView("Uploading video...")
-                .progressViewStyle(CircularProgressViewStyle())
-            } else if let thumbnail = viewModel.videoThumbnail {
-              Image(uiImage: thumbnail)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(maxWidth: .infinity)
-                .frame(height: 200)
-                .clipped()
-            } else {
-              Button(action: { showVideoEditor = true }) {
-                VStack {
-                  Image(systemName: "video.badge.plus")
-                    .font(.system(size: 40))
-                  Text("Add Video")
-                    .font(.headline)
+    NavigationStack {
+      ScrollView {
+        VStack(spacing: 20) {
+          GroupBox(label: Text("Video").bold()) {
+            VStack {
+              if viewModel.isUploading {
+                ProgressView("Uploading video...")
+                  .progressViewStyle(CircularProgressViewStyle())
+              } else if let thumbnail = viewModel.videoThumbnail {
+                Image(uiImage: thumbnail)
+                  .resizable()
+                  .aspectRatio(contentMode: .fit)
+                  .frame(maxWidth: .infinity)
+                  .frame(height: 200)
+                  .clipped()
+              } else {
+                Button(action: { showVideoEditor = true }) {
+                  VStack {
+                    Image(systemName: "video.badge.plus")
+                      .font(.system(size: 40))
+                    Text("Add Video")
+                      .font(.headline)
+                  }
+                  .frame(maxWidth: .infinity)
+                  .frame(height: 200)
+                  .background(Color.gray.opacity(0.1))
+                  .cornerRadius(12)
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 200)
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(12)
               }
-            }
 
-            if viewModel.videoThumbnail != nil {
-              Button(action: { showVideoEditor = true }) {
-                Text("Change Video")
-                  .foregroundColor(.blue)
-              }
-              .padding(.top, 8)
-            }
-          }
-        }
-        .padding(.horizontal)
-
-        GroupBox(label: Text("Details").bold()) {
-          VStack(spacing: 12) {
-            TextField("Title", text: $viewModel.exercise.title)
-              .textFieldStyle(RoundedBorderTextFieldStyle())
-              .focused($focusedField, equals: .title)
-
-            TextField("Description", text: $viewModel.exercise.description, axis: .vertical)
-              .textFieldStyle(RoundedBorderTextFieldStyle())
-              .lineLimit(3...6)
-              .focused($focusedField, equals: .description)
-
-            Picker("Difficulty", selection: $viewModel.exercise.difficulty) {
-              ForEach(Difficulty.allCases, id: \.self) { difficulty in
-                Text(difficulty.rawValue.capitalized)
+              if viewModel.videoThumbnail != nil {
+                Button(action: { showVideoEditor = true }) {
+                  Text("Change Video")
+                    .foregroundColor(.blue)
+                }
+                .padding(.top, 8)
               }
             }
           }
-        }
-        .padding(.horizontal)
+          .padding(.horizontal)
 
-        GroupBox(label: Text("Target Muscles").bold()) {
-          Button(action: { showingMuscleSelector = true }) {
-            HStack {
-              Text("Select Muscles")
-              Spacer()
-              Text("\(viewModel.exercise.targetMuscles.count) selected")
-                .foregroundColor(.gray)
-            }
-            .padding(.vertical, 8)
-          }
-        }
-        .padding(.horizontal)
-
-        GroupBox(label: Text("Exercise Specifics").bold()) {
-          VStack(spacing: 12) {
-            HStack {
-              Text("Duration")
-              Spacer()
-              TextField("Seconds", value: $viewModel.exercise.duration, format: .number)
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.trailing)
-                .frame(width: 100)
+          GroupBox(label: Text("Details").bold()) {
+            VStack(spacing: 12) {
+              TextField("Title", text: $viewModel.exercise.title)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
-                .focused($focusedField, equals: .duration)
-            }
+                .focused($focusedField, equals: .title)
 
-            HStack {
-              Text("Sets")
-              Spacer()
-              TextField("Optional", value: $viewModel.exercise.sets, format: .number)
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.trailing)
-                .frame(width: 100)
+              TextField("Description", text: $viewModel.exercise.description, axis: .vertical)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
-                .focused($focusedField, equals: .sets)
-            }
+                .lineLimit(3...6)
+                .focused($focusedField, equals: .description)
 
-            HStack {
-              Text("Reps")
-              Spacer()
-              TextField("Optional", value: $viewModel.exercise.reps, format: .number)
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.trailing)
-                .frame(width: 100)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .focused($focusedField, equals: .reps)
+              Picker("Difficulty", selection: $viewModel.exercise.difficulty) {
+                ForEach(Difficulty.allCases, id: \.self) { difficulty in
+                  Text(difficulty.rawValue.capitalized)
+                }
+              }
             }
           }
-        }
-        .padding(.horizontal)
+          .padding(.horizontal)
 
-        Button(action: { Task { await viewModel.uploadExercise() } }) {
-          if viewModel.isUploading {
-            ProgressView()
-              .progressViewStyle(CircularProgressViewStyle(tint: .white))
-          } else {
-            Text("Upload Exercise")
+          GroupBox(label: Text("Target Muscles").bold()) {
+            Button(action: { showingMuscleSelector = true }) {
+              HStack {
+                Text("Select Muscles")
+                Spacer()
+                Text("\(viewModel.exercise.targetMuscles.count) selected")
+                  .foregroundColor(.gray)
+              }
+              .padding(.vertical, 8)
+            }
           }
-        }
-        .frame(maxWidth: .infinity)
-        .padding()
-        .background(viewModel.canUpload ? Color.blue : Color.gray)
-        .foregroundColor(.white)
-        .cornerRadius(10)
-        .disabled(!viewModel.canUpload || viewModel.isUploading)
-        .padding(.horizontal)
-      }
-      .padding(.vertical)
-    }
-    .navigationTitle("Create Exercise")
-    .sheet(isPresented: $showingMuscleSelector) {
-      VStack(spacing: 0) {
-        HStack {
-          Text("Select Muscles")
-            .font(.headline)
-          Spacer()
-          Button("Done") {
-            focusedField = nil
-            showingMuscleSelector = false
-          }
-        }
-        .padding()
-        .background(Color(UIColor.systemBackground))
+          .padding(.horizontal)
 
-        List(muscleGroups, id: \.self) { muscle in
-          let isSelected = viewModel.exercise.targetMuscles.contains(muscle)
-          Button(action: {
-            if isSelected {
-              viewModel.exercise.targetMuscles.removeAll { $0 == muscle }
+          GroupBox(label: Text("Exercise Specifics").bold()) {
+            VStack(spacing: 12) {
+              HStack {
+                Text("Duration")
+                Spacer()
+                TextField("Seconds", value: $viewModel.exercise.duration, format: .number)
+                  .keyboardType(.numberPad)
+                  .multilineTextAlignment(.trailing)
+                  .frame(width: 100)
+                  .textFieldStyle(RoundedBorderTextFieldStyle())
+                  .focused($focusedField, equals: .duration)
+              }
+
+              HStack {
+                Text("Sets")
+                Spacer()
+                TextField("Optional", value: $viewModel.exercise.sets, format: .number)
+                  .keyboardType(.numberPad)
+                  .multilineTextAlignment(.trailing)
+                  .frame(width: 100)
+                  .textFieldStyle(RoundedBorderTextFieldStyle())
+                  .focused($focusedField, equals: .sets)
+              }
+
+              HStack {
+                Text("Reps")
+                Spacer()
+                TextField("Optional", value: $viewModel.exercise.reps, format: .number)
+                  .keyboardType(.numberPad)
+                  .multilineTextAlignment(.trailing)
+                  .frame(width: 100)
+                  .textFieldStyle(RoundedBorderTextFieldStyle())
+                  .focused($focusedField, equals: .reps)
+              }
+            }
+          }
+          .padding(.horizontal)
+
+          Button(action: { Task { await viewModel.uploadExercise() } }) {
+            if viewModel.isUploading {
+              ProgressView()
+                .progressViewStyle(CircularProgressViewStyle(tint: .white))
             } else {
-              viewModel.exercise.targetMuscles.append(muscle)
-            }
-          }) {
-            HStack {
-              Text(muscle)
-              Spacer()
-              if isSelected {
-                Image(systemName: "checkmark")
-                  .foregroundColor(.blue)
-              }
+              Text("Upload Exercise")
             }
           }
-          .buttonStyle(PlainButtonStyle())
+          .frame(maxWidth: .infinity)
+          .padding()
+          .background(viewModel.canUpload ? Color.blue : Color.gray)
+          .foregroundColor(.white)
+          .cornerRadius(10)
+          .disabled(!viewModel.canUpload || viewModel.isUploading)
+          .padding(.horizontal)
+        }
+        .padding(.vertical)
+      }
+      .navigationTitle("Create Exercise")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .navigationBarLeading) {
+          Button("Cancel") {
+            dismiss()
+          }
         }
       }
-      .presentationDetents([.medium])
-      .presentationDragIndicator(.visible)
+    }
+    .sheet(isPresented: $showingMuscleSelector) {
+      MuscleSelectorView(
+        muscleGroups: muscleGroups,
+        selectedMuscles: $viewModel.exercise.targetMuscles
+      )
     }
     .sheet(isPresented: $showVideoEditor) {
       VideoEditView { url in
