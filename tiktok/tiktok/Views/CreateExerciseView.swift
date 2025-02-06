@@ -141,9 +141,7 @@ struct CreateExerciseView: View {
           let isSelected = viewModel.exercise.targetMuscles.contains(muscle)
           Button(action: {
             if isSelected {
-              viewModel.exercise.targetMuscles = viewModel.exercise.targetMuscles.filter {
-                $0 != muscle
-              }
+              viewModel.exercise.targetMuscles.removeAll { $0 == muscle }
             } else {
               viewModel.exercise.targetMuscles.append(muscle)
             }
