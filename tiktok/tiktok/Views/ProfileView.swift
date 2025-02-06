@@ -69,20 +69,21 @@ struct ProfileView: View {
               Button(
                 role: .destructive,
                 action: {
-                  viewModel.signOut()
+                  Task {
+                    await viewModel.signOut()
+                  }
                 }
               ) {
                 Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
               }
             } label: {
               Image(systemName: "gearshape.fill")
-                .foregroundColor(.primary)
             }
           }
         }
       }
       .overlay {
-        if viewModel.isLoading {
+        if viewModel.isLoading || viewModel.isSigningOut {
           ProgressView()
             .scaleEffect(1.5)
             .frame(maxWidth: .infinity, maxHeight: .infinity)

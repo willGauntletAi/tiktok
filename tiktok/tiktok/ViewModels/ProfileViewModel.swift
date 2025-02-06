@@ -8,6 +8,7 @@ class ProfileViewModel: ObservableObject {
   @Published var userVideos: [Video] = []
   @Published var likedVideos: [Video] = []
   @Published var isLoading = false
+  @Published var isSigningOut = false
   @Published var error: String?
   let userId: String?  // nil means current user
 
@@ -137,16 +138,21 @@ class ProfileViewModel: ObservableObject {
     )
   }
 
+  @MainActor
   func signOut() {
-    guard userId == nil else { return }  // Only allow sign out from current user's profile
-    do {
-      try auth.signOut()
-      // Clear user data after logout
-      user = nil
-      userVideos = []
-      likedVideos = []
-    } catch {
-      self.error = error.localizedDescription
+    Task {
+      isSigningOut = true
+      do {
+        try await auth.signOut()
+        // Clear user data after logout
+        user = nil
+        userVideos = []
+        likedVideos = []
+      } catch {
+        self.error = error.localizedDescription
+        print("Error signing out: \(error)")
+      }
+      isSigningOut = false
     }
   }
 }

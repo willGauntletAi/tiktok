@@ -44,6 +44,10 @@
                 {
                     "package": "Firebase",
                     "product": "FirebaseAuth"
+                },
+                {
+                    "package": "Firebase",
+                    "product": "FirebaseMessaging"
                 }
             ],
             "info": {
@@ -71,7 +75,12 @@
                                 }
                             ]
                         }
-                    }
+                    },
+                    "UIBackgroundModes": [
+                        "fetch",
+                        "remote-notification"
+                    ],
+                    "FirebaseAppDelegateProxyEnabled": false
                 }
             }
         },

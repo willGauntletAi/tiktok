@@ -17,6 +17,8 @@ class AuthService: ObservableObject {
       if let authUser = authUser {
         Task {
           try? await self?.fetchUser(authUser: authUser)
+          // Update FCM token when user signs in
+          NotificationManager.shared.updateFCMToken(for: authUser.uid)
         }
       } else {
         self?.currentUser = nil
@@ -65,7 +67,14 @@ class AuthService: ObservableObject {
     try await createUserDocument(for: result.user, email: email)
   }
 
-  func signOut() throws {
+  func signOut() async throws {
+    if let userId = currentUser?.id {
+      // Remove FCM token when user signs out
+      try await db.collection("users").document(userId).updateData([
+        "fcmToken": FieldValue.delete()
+      ])
+    }
+
     try Auth.auth().signOut()
     self.currentUser = nil
     self.isAuthenticated = false
