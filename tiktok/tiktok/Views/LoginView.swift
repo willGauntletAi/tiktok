@@ -8,6 +8,7 @@ struct LoginView: View {
     @State private var isSignUp = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var isLoading = false
 
     var body: some View {
         NavigationStack {
@@ -20,12 +21,15 @@ struct LoginView: View {
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .autocapitalization(.none)
                     .keyboardType(.emailAddress)
+                    .disabled(isLoading)
 
                 SecureField("Password", text: $password)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .disabled(isLoading)
 
                 Button(action: {
                     Task {
+                        isLoading = true
                         do {
                             if isSignUp {
                                 try await authService.signUp(email: email, password: password)
@@ -36,20 +40,30 @@ struct LoginView: View {
                             showError = true
                             errorMessage = error.localizedDescription
                         }
+                        isLoading = false
                     }
                 }) {
-                    Text(isSignUp ? "Sign Up" : "Sign In")
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(10)
+                    HStack {
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(0.8)
+                        }
+                        Text(isSignUp ? "Sign Up" : "Sign In")
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(isLoading ? Color.blue.opacity(0.7) : Color.blue)
+                    .cornerRadius(10)
                 }
+                .disabled(isLoading)
 
                 Button(action: { isSignUp.toggle() }) {
                     Text(isSignUp ? "Already have an account? Sign In" : "Don't have an account? Sign Up")
                         .foregroundColor(.blue)
                 }
+                .disabled(isLoading)
             }
             .padding()
             .alert("Error", isPresented: $showError) {
