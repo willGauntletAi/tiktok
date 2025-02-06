@@ -13,6 +13,7 @@ struct VideoTimelineView: View {
   @State private var isDragging = false
   @State private var dragPosition: Double = 0
   @State private var seekTask: Task<Void, Never>?
+  @State private var isAddingClip = false
 
   private let thumbnailHeight: CGFloat = 60
   private let positionIndicatorWidth: CGFloat = 2
@@ -26,13 +27,16 @@ struct VideoTimelineView: View {
           selection: $selectedItem,
           matching: .videos
         ) {
-          Label("Add Clip", systemImage: "plus")
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .background(Color.blue)
-            .foregroundColor(.white)
-            .cornerRadius(8)
+          Label(
+            isAddingClip ? "Adding Clip..." : "Add Clip", systemImage: isAddingClip ? "" : "plus"
+          )
+          .frame(maxWidth: .infinity)
+          .padding(.vertical, 8)
+          .background(isAddingClip ? Color.gray : Color.blue)
+          .foregroundColor(.white)
+          .cornerRadius(8)
         }
+        .disabled(isAddingClip)
 
         if !viewModel.clips.isEmpty {
           Button(action: {
@@ -47,7 +51,8 @@ struct VideoTimelineView: View {
               .foregroundColor(.white)
               .cornerRadius(8)
           }
-          .disabled(currentPosition <= 0 || currentPosition >= viewModel.totalDuration)
+          .disabled(
+            currentPosition <= 0 || currentPosition >= viewModel.totalDuration || isAddingClip)
         }
       }
       .padding(.horizontal)
@@ -177,6 +182,7 @@ struct VideoTimelineView: View {
     .onChange(of: selectedItem) { item in
       if let item = item {
         Task {
+          isAddingClip = true
           do {
             if let data = try? await item.loadTransferable(type: Data.self) {
               let tempURL = FileManager.default.temporaryDirectory
@@ -190,6 +196,7 @@ struct VideoTimelineView: View {
             print("Error adding clip: \(error)")
           }
           selectedItem = nil
+          isAddingClip = false
         }
       }
     }
