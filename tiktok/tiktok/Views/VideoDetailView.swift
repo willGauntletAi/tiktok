@@ -11,6 +11,7 @@ struct VideoDetailView: View {
   @State private var isExpanded = false
   @State private var firstLineDescription: String = ""
   @State private var fullDescription: String = ""
+  @State private var showComments = false
   @Environment(\.dismiss) private var dismiss
   @Environment(\.presentationMode) var presentationMode
   @EnvironmentObject private var navigator: Navigator
@@ -237,6 +238,25 @@ struct VideoDetailView: View {
             }
             .accessibilityLabel("View Profile")
             .accessibilityValue("@\(viewModel.instructorName)")
+
+            // Comment Button
+            Button(action: {
+              showComments = true
+            }) {
+              VStack {
+                Image(systemName: "bubble.left")
+                  .font(.system(size: 28))
+                  .foregroundColor(.white)
+                  .shadow(radius: 2)
+
+                Text("Comments")
+                  .font(.caption)
+                  .foregroundColor(.white)
+                  .shadow(radius: 2)
+                  .lineLimit(1)
+              }
+            }
+            .accessibilityLabel("View Comments")
           }
           .frame(width: 80)
           .padding(.trailing, 16)
@@ -348,6 +368,11 @@ struct VideoDetailView: View {
       if let error = viewModel.error {
         Text(error)
       }
+    }
+    .sheet(isPresented: $showComments) {
+      CommentSheetView(viewModel: CommentViewModel(videoId: viewModel.videoId))
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
   }
 }

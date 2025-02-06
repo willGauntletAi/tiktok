@@ -10,7 +10,7 @@ class VideoDetailViewModel: ObservableObject {
   @Published var instructorName: String = ""
 
   private let db = Firestore.firestore()
-  private let videoId: String
+  let videoId: String
   private var likeDocument: DocumentReference?
   private let auth = Auth.auth()
 
