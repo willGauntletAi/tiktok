@@ -4,12 +4,12 @@ import SwiftUI
 
 struct VideoTimelineView: View {
   @ObservedObject var viewModel: VideoEditViewModel
+  @Binding var currentPosition: Double
   @State private var selectedItem: PhotosPickerItem?
   @State private var showingDeleteAlert = false
   @State private var clipToDelete: Int?
   @State private var isLoadingThumbnails = true
   @State private var totalWidth: CGFloat = 0
-  @State private var currentPosition: Double = 0
   @State private var isDragging = false
   @State private var dragPosition: Double = 0
   @State private var seekTask: Task<Void, Never>?
@@ -21,16 +21,34 @@ struct VideoTimelineView: View {
   var body: some View {
     VStack(spacing: 12) {
       // Add clip button
-      PhotosPicker(
-        selection: $selectedItem,
-        matching: .videos
-      ) {
-        Label("Add Clip", systemImage: "plus")
-          .frame(maxWidth: .infinity)
-          .padding(.vertical, 8)
-          .background(Color.blue)
-          .foregroundColor(.white)
-          .cornerRadius(8)
+      HStack {
+        PhotosPicker(
+          selection: $selectedItem,
+          matching: .videos
+        ) {
+          Label("Add Clip", systemImage: "plus")
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(Color.blue)
+            .foregroundColor(.white)
+            .cornerRadius(8)
+        }
+
+        if !viewModel.clips.isEmpty {
+          Button(action: {
+            Task {
+              await viewModel.splitClip(at: currentPosition)
+            }
+          }) {
+            Label("Split", systemImage: "scissors")
+              .frame(maxWidth: .infinity)
+              .padding(.vertical, 8)
+              .background(Color.orange)
+              .foregroundColor(.white)
+              .cornerRadius(8)
+          }
+          .disabled(currentPosition <= 0 || currentPosition >= viewModel.totalDuration)
+        }
       }
       .padding(.horizontal)
 
@@ -81,23 +99,30 @@ struct VideoTimelineView: View {
                       .onTapGesture {
                         viewModel.selectedClipIndex = index
                       }
-                      .overlay(alignment: .topTrailing) {
-                        // Delete button
-                        Button(action: {
-                          clipToDelete = index
-                          showingDeleteAlert = true
-                        }) {
-                          Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.red)
-                            .background(Circle().fill(Color.white))
-                            .padding(4)
-                        }
-                      }
                       .allowsHitTesting(false)  // Let gestures pass through thumbnails
+
+                    // Delete button
+                    VStack {
+                      Button(action: {
+                        clipToDelete = index
+                        showingDeleteAlert = true
+                      }) {
+                        Image(systemName: "xmark.circle.fill")
+                          .foregroundColor(.red)
+                          .background(Circle().fill(Color.white))
+                          .padding(4)
+                      }
+                      .zIndex(2)  // Ensure button appears above everything
+
+                      Spacer()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                   }
 
-                  // Add swap button if this isn't the last clip
-                  if index < viewModel.clips.count - 1 {
+                  // Add swap button if this isn't the last clip and has non-zero width
+                  if index < viewModel.clips.count - 1
+                    && clipWidth(for: clip, in: geometry.size.width) > 0
+                  {
                     Button(action: {
                       viewModel.swapClips(at: index)
                     }) {
@@ -107,13 +132,12 @@ struct VideoTimelineView: View {
                         .foregroundColor(.white)
                     }
                     .offset(x: swapButtonSize / 2)
-                    .zIndex(1)  // Ensure button appears above clips
-                    .allowsHitTesting(true)  // Keep swap buttons interactive
+                    .zIndex(2)  // Ensure button appears above everything
                   }
                 }
               }
             }
-            .allowsHitTesting(true)  // Allow interaction with swap buttons
+            .allowsHitTesting(true)  // Allow interaction with buttons
 
             // Position indicator
             Rectangle()
@@ -215,7 +239,9 @@ struct VideoTimelineView: View {
 
   private func clipWidth(for clip: VideoClip, in totalWidth: CGFloat) -> CGFloat {
     let clipDuration = clip.endTime - clip.startTime
-    return totalWidth * CGFloat(clipDuration / viewModel.totalDuration)
+    let totalDuration = viewModel.totalDuration
+    guard totalDuration > 0 else { return 0 }
+    return max(0, totalWidth * CGFloat(clipDuration / totalDuration))
   }
 
   private func timeString(from seconds: Double) -> String {
@@ -265,7 +291,7 @@ struct VideoEditView: View {
         }
 
         // Timeline with position indicator
-        VideoTimelineView(viewModel: viewModel)
+        VideoTimelineView(viewModel: viewModel, currentPosition: $viewModel.currentPosition)
       }
       .navigationTitle("Edit Video")
       .navigationBarTitleDisplayMode(.inline)

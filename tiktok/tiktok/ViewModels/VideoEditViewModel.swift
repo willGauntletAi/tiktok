@@ -8,6 +8,7 @@ class VideoEditViewModel: ObservableObject {
   @Published var selectedClipIndex: Int?
   @Published var isProcessing = false
   @Published var errorMessage: String?
+  @Published var currentPosition: Double = 0
   @Published var duration: Double = 0
   @Published var startTime: Double = 0 {
     didSet { updatePlayerTime() }
@@ -425,6 +426,82 @@ class VideoEditViewModel: ObservableObject {
     // Update player with new clip order
     Task {
       try? await setupPlayerWithComposition()
+    }
+  }
+
+  func splitClip(at time: Double) async {
+    // Find which clip contains this time
+    var accumulatedTime: Double = 0
+    for (index, clip) in clips.enumerated() {
+      let clipDuration = clip.endTime - clip.startTime
+      let clipEndTime = accumulatedTime + clipDuration
+
+      if time > accumulatedTime && time < clipEndTime {
+        // Calculate the relative split point within this clip
+        let relativeTime = time - accumulatedTime + clip.startTime
+
+        // Create two new clips from the original
+        var firstHalf = VideoClip(
+          asset: clip.asset,
+          startTime: clip.startTime,
+          endTime: relativeTime,
+          thumbnail: nil
+        )
+
+        var secondHalf = VideoClip(
+          asset: clip.asset,
+          startTime: relativeTime,
+          endTime: clip.endTime,
+          thumbnail: nil
+        )
+
+        // Generate new thumbnails for both clips
+        do {
+          let imageGenerator = AVAssetImageGenerator(asset: clip.asset)
+          imageGenerator.appliesPreferredTrackTransform = true
+
+          // Generate thumbnail for first half at its midpoint
+          let firstHalfMidpoint = CMTime(
+            seconds: (firstHalf.startTime + firstHalf.endTime) / 2,
+            preferredTimescale: 600
+          )
+          let firstHalfImage = try imageGenerator.copyCGImage(
+            at: firstHalfMidpoint, actualTime: nil)
+          firstHalf.thumbnail = UIImage(cgImage: firstHalfImage)
+
+          // Generate thumbnail for second half at its midpoint
+          let secondHalfMidpoint = CMTime(
+            seconds: (secondHalf.startTime + secondHalf.endTime) / 2,
+            preferredTimescale: 600
+          )
+          let secondHalfImage = try imageGenerator.copyCGImage(
+            at: secondHalfMidpoint, actualTime: nil)
+          secondHalf.thumbnail = UIImage(cgImage: secondHalfImage)
+        } catch {
+          print("Error generating thumbnails for split clips: \(error)")
+          // If we fail to generate new thumbnails, use the original for both
+          firstHalf.thumbnail = clip.thumbnail
+          secondHalf.thumbnail = clip.thumbnail
+        }
+
+        // Replace the original clip with the two new ones
+        clips.remove(at: index)
+        clips.insert(secondHalf, at: index)
+        clips.insert(firstHalf, at: index)
+
+        // Update selected clip index if needed
+        if selectedClipIndex == index {
+          selectedClipIndex = index  // Select first half
+        } else if selectedClipIndex != nil && selectedClipIndex! > index {
+          selectedClipIndex! += 1  // Shift selection for clips after the split
+        }
+
+        // Update player with new clips
+        try? await setupPlayerWithComposition()
+        return
+      }
+
+      accumulatedTime += clipDuration
     }
   }
 }
