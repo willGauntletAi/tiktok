@@ -6,12 +6,31 @@ struct VideoDetailView: View {
   let workoutPlan: WorkoutPlan
   let workoutIndex: Int?
   let exerciseIndex: Int?
+  @StateObject private var viewModel: VideoDetailViewModel
   @State private var player: AVPlayer?
   @State private var isExpanded = false
   @State private var firstLineDescription: String = ""
   @State private var fullDescription: String = ""
   @Environment(\.dismiss) private var dismiss
   @Environment(\.presentationMode) var presentationMode
+
+  init(workoutPlan: WorkoutPlan, workoutIndex: Int?, exerciseIndex: Int?) {
+    self.workoutPlan = workoutPlan
+    self.workoutIndex = workoutIndex
+    self.exerciseIndex = exerciseIndex
+
+    let videoId: String
+    if let exerciseIndex = exerciseIndex,
+      let workoutIndex = workoutIndex
+    {
+      videoId = workoutPlan.workouts[workoutIndex].workout.exercises[exerciseIndex].id
+    } else if let workoutIndex = workoutIndex {
+      videoId = workoutPlan.workouts[workoutIndex].workout.id
+    } else {
+      videoId = workoutPlan.id
+    }
+    _viewModel = StateObject(wrappedValue: VideoDetailViewModel(videoId: videoId))
+  }
 
   private var currentWorkout: Workout? {
     guard let workoutIndex = workoutIndex else { return nil }
@@ -169,12 +188,34 @@ struct VideoDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
           Spacer()
 
-          // Title
-          Text(title)
-            .font(.title2)
-            .fontWeight(.bold)
-            .foregroundColor(.white)
-            .shadow(radius: 2)
+          // Title and Like Button
+          HStack {
+            Text(title)
+              .font(.title2)
+              .fontWeight(.bold)
+              .foregroundColor(.white)
+              .shadow(radius: 2)
+
+            Spacer()
+
+            Button(action: {
+              Task {
+                await viewModel.toggleLike()
+              }
+            }) {
+              Image(systemName: viewModel.isLiked ? "heart.fill" : "heart")
+                .font(.title2)
+                .foregroundColor(viewModel.isLiked ? .red : .white)
+                .shadow(radius: 2)
+            }
+            .disabled(viewModel.isLoading)
+            .overlay {
+              if viewModel.isLoading {
+                ProgressView()
+                  .progressViewStyle(CircularProgressViewStyle(tint: .white))
+              }
+            }
+          }
 
           // Description
           Text(isExpanded ? fullDescription : firstLineDescription)
@@ -259,6 +300,15 @@ struct VideoDetailView: View {
         firstLineDescription = firstLine
       } else {
         firstLineDescription = description
+      }
+    }
+    .alert("Error", isPresented: .constant(viewModel.error != nil)) {
+      Button("OK") {
+        viewModel.error = nil
+      }
+    } message: {
+      if let error = viewModel.error {
+        Text(error)
       }
     }
   }
