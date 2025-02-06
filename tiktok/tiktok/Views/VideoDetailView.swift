@@ -185,85 +185,86 @@ struct VideoDetailView: View {
         }
 
         // Overlay content
-        VStack(alignment: .leading, spacing: 8) {
+        VStack {
           Spacer()
+          VStack(alignment: .leading, spacing: 8) {
+            // Title and Like Button
+            HStack {
+              Text(title)
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .shadow(radius: 2)
+              Spacer()
+              Button(action: {
+                Task {
+                  await viewModel.toggleLike()
+                }
+              }) {
+                Image(systemName: viewModel.isLiked ? "heart.fill" : "heart")
+                  .font(.title2)
+                  .foregroundColor(viewModel.isLiked ? .red : .white)
+                  .shadow(radius: 2)
+              }
+              .disabled(viewModel.isLoading)
+              .overlay {
+                if viewModel.isLoading {
+                  ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                }
+              }
+            }
 
-          // Title and Like Button
-          HStack {
-            Text(title)
-              .font(.title2)
-              .fontWeight(.bold)
+            // Description
+            Text(isExpanded ? fullDescription : firstLineDescription)
+              .font(.body)
               .foregroundColor(.white)
               .shadow(radius: 2)
+              .lineLimit(isExpanded ? nil : 1)
 
-            Spacer()
-
-            Button(action: {
-              Task {
-                await viewModel.toggleLike()
-              }
-            }) {
-              Image(systemName: viewModel.isLiked ? "heart.fill" : "heart")
-                .font(.title2)
-                .foregroundColor(viewModel.isLiked ? .red : .white)
-                .shadow(radius: 2)
-            }
-            .disabled(viewModel.isLoading)
-            .overlay {
-              if viewModel.isLoading {
-                ProgressView()
-                  .progressViewStyle(CircularProgressViewStyle(tint: .white))
-              }
-            }
-          }
-
-          // Description
-          Text(isExpanded ? fullDescription : firstLineDescription)
-            .font(.body)
-            .foregroundColor(.white)
-            .shadow(radius: 2)
-            .lineLimit(isExpanded ? nil : 1)
-
-          if isExpanded {
-            // Additional details
-            VStack(alignment: .leading, spacing: 12) {
-              DetailRow(
-                title: "Difficulty",
-                value: difficulty.rawValue.capitalized)
-
-              DetailRow(
-                title: "Target Muscles",
-                value: targetMuscles.joined(separator: ", "))
-
-              if let exercise = currentExercise {
-                DetailRow(title: "Duration", value: "\(exercise.duration) seconds")
-              } else if let workoutMeta = currentWorkoutMetadata {
+            if isExpanded {
+              // Additional details
+              VStack(alignment: .leading, spacing: 12) {
                 DetailRow(
-                  title: "Total Duration",
-                  value: "\(workoutMeta.workout.totalDuration) seconds")
+                  title: "Difficulty",
+                  value: difficulty.rawValue.capitalized)
                 DetailRow(
-                  title: "Exercises",
-                  value: "\(workoutMeta.workout.exercises.count)")
-                DetailRow(
-                  title: "Schedule",
-                  value: "Week \(workoutMeta.weekNumber), Day \(workoutMeta.dayOfWeek)")
+                  title: "Target Muscles",
+                  value: targetMuscles.joined(separator: ", "))
+                if let exercise = currentExercise {
+                  DetailRow(title: "Duration", value: "\(exercise.duration) seconds")
+                } else if let workoutMeta = currentWorkoutMetadata {
+                  DetailRow(
+                    title: "Total Duration",
+                    value: "\(workoutMeta.workout.totalDuration) seconds")
+                  DetailRow(
+                    title: "Exercises",
+                    value: "\(workoutMeta.workout.exercises.count)")
+                  DetailRow(
+                    title: "Schedule",
+                    value: "Week \(workoutMeta.weekNumber), Day \(workoutMeta.dayOfWeek)")
+                }
               }
             }
           }
-        }
-        .padding()
-        .background(
-          LinearGradient(
-            gradient: Gradient(colors: [.black.opacity(0.7), .clear]),
-            startPoint: .bottom,
-            endPoint: .top
+          .padding()
+          .background(
+            LinearGradient(
+              gradient: Gradient(
+                colors: [.black.opacity(0.7), .black.opacity(0.4), .clear]
+              ),
+              startPoint: .bottom,
+              endPoint: .top
+            )
+            .allowsHitTesting(false)
           )
-        )
-        .frame(maxWidth: isExpanded ? .infinity : geometry.size.width * 0.8)
-        .contentShape(Rectangle())
-        .onTapGesture {
-          withAnimation(.easeInOut) {
-            isExpanded.toggle()
+          .fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: isExpanded ? .infinity : geometry.size.width * 0.8)
+          .contentShape(Rectangle())
+          .onTapGesture {
+            withAnimation(.easeInOut) {
+              isExpanded.toggle()
+            }
           }
         }
 
