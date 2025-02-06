@@ -178,7 +178,8 @@ struct ContentCard: View {
           createdAt: exercise.createdAt,
           updatedAt: exercise.updatedAt
         )
-        navigator.navigate(to: .videoDetail(workoutPlan: workoutPlan, workoutIndex: 0, exerciseIndex: 0))
+        navigator.navigate(
+          to: .videoDetail(workoutPlan: workoutPlan, workoutIndex: 0, exerciseIndex: 0))
       case .workout(let workout):
         let workoutPlan = WorkoutPlan(
           id: UUID().uuidString,
@@ -194,9 +195,11 @@ struct ContentCard: View {
           createdAt: workout.createdAt,
           updatedAt: workout.updatedAt
         )
-        navigator.navigate(to: .videoDetail(workoutPlan: workoutPlan, workoutIndex: 0, exerciseIndex: nil))
+        navigator.navigate(
+          to: .videoDetail(workoutPlan: workoutPlan, workoutIndex: 0, exerciseIndex: nil))
       case .workoutPlan(let plan):
-        navigator.navigate(to: .videoDetail(workoutPlan: plan, workoutIndex: nil, exerciseIndex: nil))
+        navigator.navigate(
+          to: .videoDetail(workoutPlan: plan, workoutIndex: nil, exerciseIndex: nil))
       }
     }) {
       VStack(alignment: .leading) {
