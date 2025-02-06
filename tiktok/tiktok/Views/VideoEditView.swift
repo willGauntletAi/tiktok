@@ -14,6 +14,8 @@ struct VideoTimelineView: View {
   @State private var dragPosition: Double = 0
   @State private var seekTask: Task<Void, Never>?
   @State private var isAddingClip = false
+  @State private var showCamera = false
+  @StateObject private var cameraViewModel = CreateExerciseViewModel()
 
   private let thumbnailHeight: CGFloat = 60
   private let positionIndicatorWidth: CGFloat = 2
@@ -21,8 +23,20 @@ struct VideoTimelineView: View {
 
   var body: some View {
     VStack(spacing: 12) {
-      // Add clip button
+      // Add clip buttons
       HStack {
+        // Camera button
+        Button(action: { showCamera = true }) {
+          Label("Record", systemImage: "camera")
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(Color.green)
+            .foregroundColor(.white)
+            .cornerRadius(8)
+        }
+        .disabled(isAddingClip)
+
+        // Library button
         PhotosPicker(
           selection: $selectedItem,
           matching: .videos
@@ -197,6 +211,77 @@ struct VideoTimelineView: View {
           }
           selectedItem = nil
           isAddingClip = false
+        }
+      }
+    }
+    .fullScreenCover(isPresented: $showCamera) {
+      ZStack {
+        if let currentFrame = cameraViewModel.currentFrame {
+          Image(currentFrame, scale: 1.0, label: Text("Camera Preview"))
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .ignoresSafeArea()
+        }
+
+        VStack {
+          Spacer()
+
+          HStack(spacing: 30) {
+            Spacer()
+
+            // Record button
+            Button(action: {
+              if cameraViewModel.isRecording {
+                cameraViewModel.stopRecording()
+              } else {
+                cameraViewModel.startRecording()
+              }
+            }) {
+              ZStack {
+                Circle()
+                  .strokeBorder(Color.white, lineWidth: 3)
+                  .frame(width: 72, height: 72)
+
+                Circle()
+                  .fill(cameraViewModel.isRecording ? Color.red : Color.white)
+                  .frame(width: 60, height: 60)
+              }
+            }
+
+            // Cancel button
+            Button(action: { showCamera = false }) {
+              Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 30))
+                .foregroundColor(.white)
+            }
+
+            Spacer()
+          }
+          .padding(.bottom, 30)
+        }
+      }
+      .onAppear {
+        Task {
+          do {
+            try await cameraViewModel.configureAndStartCaptureSession()
+          } catch {
+            print("Error setting up camera: \(error)")
+          }
+        }
+      }
+      .onChange(of: cameraViewModel.videoData) { newData in
+        if let data = newData {
+          Task {
+            isAddingClip = true
+            let tempURL = FileManager.default.temporaryDirectory
+              .appendingPathComponent(UUID().uuidString)
+              .appendingPathExtension("mov")
+
+            try? data.write(to: tempURL)
+            try await viewModel.addClip(from: tempURL)
+            showCamera = false
+            isAddingClip = false
+          }
         }
       }
     }

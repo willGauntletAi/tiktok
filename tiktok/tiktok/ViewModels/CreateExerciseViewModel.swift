@@ -173,39 +173,16 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
 
   // MARK: - Camera Setup
 
-  func setupCamera() {
-    Task { @MainActor in
-      do {
-        let hasPermission = await checkCameraPermission()
-        if hasPermission {
-          try await configureAndStartCaptureSession()
-        } else {
-          showError = true
-          errorMessage = "Camera access is required. Please enable it in Settings."
-          showCamera = false
-        }
-      } catch {
-        showError = true
-        errorMessage = "Failed to setup camera: \(error.localizedDescription)"
-        showCamera = false
-      }
+  func setupCamera() async {
+    do {
+      try await configureAndStartCaptureSession()
+    } catch {
+      showError = true
+      errorMessage = error.localizedDescription
     }
   }
 
-  private func checkCameraPermission() async -> Bool {
-    switch AVCaptureDevice.authorizationStatus(for: .video) {
-    case .authorized:
-      return true
-    case .notDetermined:
-      return await AVCaptureDevice.requestAccess(for: .video)
-    case .denied, .restricted:
-      return false
-    @unknown default:
-      return false
-    }
-  }
-
-  private func configureAndStartCaptureSession() async throws {
+  func configureAndStartCaptureSession() async throws {
     let session = AVCaptureSession()
     session.beginConfiguration()
     session.sessionPreset = .high

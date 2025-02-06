@@ -103,7 +103,7 @@ class CreateWorkoutPlanViewModel: ObservableObject {
   func processVideoData(_ data: Data) async {
     videoData = nil
     isUploading = true
-    
+
     do {
       self.videoData = data
 
@@ -129,7 +129,7 @@ class CreateWorkoutPlanViewModel: ObservableObject {
       videoData = nil
       videoThumbnail = nil
     }
-    
+
     isUploading = false
   }
 

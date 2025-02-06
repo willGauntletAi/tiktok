@@ -76,7 +76,9 @@ struct CameraView: View {
       }
     }
     .onAppear {
-      viewModel.setupCamera()
+      Task {
+        await viewModel.setupCamera()
+      }
     }
     .onDisappear {
       viewModel.captureSession?.stopRunning()
