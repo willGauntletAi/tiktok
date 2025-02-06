@@ -141,7 +141,9 @@ struct CreateExerciseView: View {
           let isSelected = viewModel.exercise.targetMuscles.contains(muscle)
           Button(action: {
             if isSelected {
-              viewModel.exercise.targetMuscles.removeAll { $0 == muscle }
+              viewModel.exercise.targetMuscles = viewModel.exercise.targetMuscles.filter {
+                $0 != muscle
+              }
             } else {
               viewModel.exercise.targetMuscles.append(muscle)
             }
@@ -170,11 +172,6 @@ struct CreateExerciseView: View {
       }
     } message: {
       Text(viewModel.errorMessage)
-    }
-    .onChange(of: viewModel.shouldNavigateToProfile) { shouldNavigate in
-      if shouldNavigate {
-        presentationMode.wrappedValue.dismiss()
-      }
     }
     .onTapGesture {
       focusedField = nil

@@ -29,12 +29,12 @@ class CreateWorkoutPlanViewModel: ObservableObject {
   @Published var videoThumbnail: UIImage?
   @Published var videoData: Data?
   @Published var showCamera = false
-  @Published var shouldNavigateToProfile = false
   @Published var editingWorkoutId: String?
   @Published var showScheduleEditor = false
 
+  var navigator: Navigator?
+
   private let db = Firestore.firestore()
-  private let navigationVM = NavigationViewModel.shared
 
   init() {
     self.workoutPlan = WorkoutPlan.empty()
@@ -188,8 +188,7 @@ class CreateWorkoutPlanViewModel: ObservableObject {
         self.videoThumbnail = nil
 
         // 5. Trigger navigation to profile
-        self.shouldNavigateToProfile = true
-        self.navigationVM.navigateToProfile()
+        navigator?.navigate(to: .profile)
       }
     } catch {
       errorMessage = "Failed to save workout plan: \(error.localizedDescription)"

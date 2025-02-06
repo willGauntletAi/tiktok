@@ -11,12 +11,13 @@ import SwiftUI
 
 struct ContentView: View {
   @StateObject private var authService = AuthService.shared
-  @StateObject private var navigationVM = NavigationViewModel.shared
+  @StateObject private var navigator = Navigator()
+  @State private var selectedTab = 0
 
   var body: some View {
     Group {
       if authService.isAuthenticated {
-        TabView(selection: $navigationVM.selectedTab) {
+        TabView(selection: $selectedTab) {
           NavigationStack {
             SearchView()
           }
@@ -31,15 +32,21 @@ struct ContentView: View {
             }
             .tag(1)
 
-          NavigationStack {
+          NavigationStack(path: $navigator.path) {
             ProfileView()
+              .navigationDestination(for: AppRoute.self) { route in
+                switch route {
+                case .profile:
+                  ProfileView()
+                }
+              }
           }
           .tabItem {
             Label("Profile", systemImage: "person")
           }
           .tag(2)
         }
-        .environmentObject(navigationVM)
+        .environmentObject(navigator)
       } else {
         LoginView()
       }

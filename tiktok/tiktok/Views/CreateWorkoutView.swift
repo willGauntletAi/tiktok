@@ -171,11 +171,6 @@ struct CreateWorkoutView: View {
         Text(error)
       }
     }
-    .onChange(of: viewModel.shouldNavigateToProfile) { shouldNavigate in
-      if shouldNavigate {
-        presentationMode.wrappedValue.dismiss()
-      }
-    }
   }
 }
 

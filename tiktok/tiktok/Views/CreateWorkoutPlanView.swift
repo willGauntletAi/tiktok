@@ -98,7 +98,11 @@ struct CreateWorkoutPlanView: View {
             }
             ForEach(groupedWorkouts.keys.sorted(), id: \.self) { week in
               Section(header: Text("Week \(week)").font(.headline)) {
-                ForEach(groupedWorkouts[week]?.sorted(by: { $0.workoutWithMeta.dayOfWeek < $1.workoutWithMeta.dayOfWeek }) ?? []) { workoutInstance in
+                ForEach(
+                  groupedWorkouts[week]?.sorted(by: {
+                    $0.workoutWithMeta.dayOfWeek < $1.workoutWithMeta.dayOfWeek
+                  }) ?? []
+                ) { workoutInstance in
                   HStack {
                     VStack(alignment: .leading) {
                       Text(workoutInstance.workoutWithMeta.workout.title)
@@ -107,7 +111,10 @@ struct CreateWorkoutPlanView: View {
                         Button(action: {
                           viewModel.editWorkoutSchedule(workoutInstance.id)
                         }) {
-                          let dayName = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][workoutInstance.workoutWithMeta.dayOfWeek]
+                          let dayName = [
+                            "", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+                            "Sunday",
+                          ][workoutInstance.workoutWithMeta.dayOfWeek]
                           Text(dayName)
                             .font(.caption)
                             .foregroundColor(.blue)
@@ -227,11 +234,6 @@ struct CreateWorkoutPlanView: View {
       } message: {
         if let error = viewModel.errorMessage {
           Text(error)
-        }
-      }
-      .onChange(of: viewModel.shouldNavigateToProfile) { shouldNavigate in
-        if shouldNavigate {
-          presentationMode.wrappedValue.dismiss()
         }
       }
     }
