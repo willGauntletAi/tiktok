@@ -20,6 +20,7 @@ class CreateWorkoutViewModel: ObservableObject {
   @Published var workout: Workout
   @Published var selectedExercises: [ExerciseInstance] = []
   @Published var isLoading = false
+  @Published var isUploading = false
   @Published var errorMessage: String?
   @Published var showExerciseSelector = false
   @Published var videoThumbnail: UIImage?
@@ -99,6 +100,39 @@ class CreateWorkoutViewModel: ObservableObject {
       videoData = nil
       videoThumbnail = nil
     }
+  }
+
+  func processVideoData(_ data: Data) async {
+    videoData = nil
+    isUploading = true
+
+    do {
+      self.videoData = data
+
+      let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+        UUID().uuidString + ".mov")
+      try data.write(to: tmpURL)
+
+      let asset = AVAsset(url: tmpURL)
+
+      let imageGenerator = AVAssetImageGenerator(asset: asset)
+      imageGenerator.appliesPreferredTrackTransform = true
+      imageGenerator.maximumSize = CGSize(width: 400, height: 400)
+      imageGenerator.requestedTimeToleranceBefore = .zero
+      imageGenerator.requestedTimeToleranceAfter = .zero
+
+      let cgImage = try imageGenerator.copyCGImage(at: .zero, actualTime: nil)
+      self.videoThumbnail = UIImage(cgImage: cgImage)
+
+      try FileManager.default.removeItem(at: tmpURL)
+
+    } catch {
+      errorMessage = "Failed to process video: \(error.localizedDescription)"
+      videoData = nil
+      videoThumbnail = nil
+    }
+
+    isUploading = false
   }
 
   func saveWorkout() async {

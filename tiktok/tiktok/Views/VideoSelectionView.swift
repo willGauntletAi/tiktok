@@ -12,17 +12,7 @@ struct VideoSelectionView: View {
     VStack(spacing: 20) {
       GroupBox(label: Text("Video").bold()) {
         ZStack {
-          if isChangingVideo {
-            Rectangle()
-              .fill(Color.black.opacity(0.3))
-              .frame(maxWidth: .infinity)
-              .frame(height: 200)
-              .overlay(
-                ProgressView()
-                  .progressViewStyle(CircularProgressViewStyle(tint: .white))
-              )
-              .transition(.opacity)
-          } else if let videoPreview = videoThumbnail {
+          if let videoPreview = videoThumbnail {
             Image(uiImage: videoPreview)
               .resizable()
               .aspectRatio(contentMode: .fit)
@@ -41,7 +31,6 @@ struct VideoSelectionView: View {
               )
           }
         }
-        .animation(.easeInOut, value: isChangingVideo)
         .animation(.easeInOut, value: videoThumbnail)
       }
       .padding(.horizontal)
@@ -59,6 +48,7 @@ struct VideoSelectionView: View {
             }
           }
           .padding(.vertical, 8)
+          .disabled(isChangingVideo)
 
           Divider()
 
@@ -69,12 +59,20 @@ struct VideoSelectionView: View {
             HStack {
               Image(systemName: "photo.on.rectangle")
                 .frame(width: 24, height: 24)
-              Text(videoThumbnail == nil ? "Select from Library" : "Choose Different Video")
+              Text(
+                isChangingVideo
+                  ? "Adding Video..."
+                  : (videoThumbnail == nil ? "Select from Library" : "Choose Different Video")
+              )
               Spacer()
-              Image(systemName: "chevron.right")
-                .foregroundColor(.gray)
+              if isChangingVideo {
+                Image(systemName: "chevron.right")
+                  .foregroundColor(.gray)
+              }
             }
+            .foregroundColor(isChangingVideo ? .gray : .primary)
           }
+          .disabled(isChangingVideo)
           .onChange(of: selectedItem) { newValue in
             if let item = newValue {
               withAnimation {

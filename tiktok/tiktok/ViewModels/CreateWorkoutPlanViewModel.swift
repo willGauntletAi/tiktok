@@ -24,6 +24,7 @@ class CreateWorkoutPlanViewModel: ObservableObject {
   @Published var workoutPlan: WorkoutPlan
   @Published var selectedWorkouts: [WorkoutInstance] = []
   @Published var isLoading = false
+  @Published var isUploading = false
   @Published var errorMessage: String?
   @Published var showWorkoutSelector = false
   @Published var videoThumbnail: UIImage?
@@ -99,20 +100,11 @@ class CreateWorkoutPlanViewModel: ObservableObject {
     }
   }
 
-  func loadVideo(from item: PhotosPickerItem?) async {
-    guard let item = item else { return }
-
+  func processVideoData(_ data: Data) async {
     videoData = nil
-
+    isUploading = true
+    
     do {
-      let dataLoadTask = Task { try await item.loadTransferable(type: Data.self) }
-
-      guard let data = try await dataLoadTask.value else {
-        throw NSError(
-          domain: "", code: -1,
-          userInfo: [NSLocalizedDescriptionKey: "Could not load video data"])
-      }
-
       self.videoData = data
 
       let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -133,10 +125,12 @@ class CreateWorkoutPlanViewModel: ObservableObject {
       try FileManager.default.removeItem(at: tmpURL)
 
     } catch {
-      errorMessage = "Failed to load video: \(error.localizedDescription)"
+      errorMessage = "Failed to process video: \(error.localizedDescription)"
       videoData = nil
       videoThumbnail = nil
     }
+    
+    isUploading = false
   }
 
   func saveWorkoutPlan() async {

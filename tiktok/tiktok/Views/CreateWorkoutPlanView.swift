@@ -7,6 +7,7 @@ struct CreateWorkoutPlanView: View {
   @StateObject private var viewModel = CreateWorkoutPlanViewModel()
   @FocusState private var focusedField: Field?
   @Environment(\.presentationMode) var presentationMode
+  @State private var showVideoEditor = false
 
   enum Field {
     case title
@@ -14,15 +15,43 @@ struct CreateWorkoutPlanView: View {
   }
 
   private func videoSelectionSection() -> some View {
-    VideoSelectionView(
-      videoThumbnail: $viewModel.videoThumbnail,
-      showCamera: $viewModel.showCamera,
-      onVideoSelected: { item in
-        Task {
-          await viewModel.loadVideo(from: item)
+    GroupBox(label: Text("Video").bold()) {
+      VStack {
+        if viewModel.isUploading {
+          ProgressView("Uploading video...")
+            .progressViewStyle(CircularProgressViewStyle())
+        } else if let thumbnail = viewModel.videoThumbnail {
+          Image(uiImage: thumbnail)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .frame(height: 200)
+            .clipped()
+        } else {
+          Button(action: { showVideoEditor = true }) {
+            VStack {
+              Image(systemName: "video.badge.plus")
+                .font(.system(size: 40))
+              Text("Add Video")
+                .font(.headline)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 200)
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(12)
+          }
+        }
+
+        if viewModel.videoThumbnail != nil {
+          Button(action: { showVideoEditor = true }) {
+            Text("Change Video")
+              .foregroundColor(.blue)
+          }
+          .padding(.top, 8)
         }
       }
-    )
+    }
+    .padding(.horizontal)
   }
 
   private func workoutDetailsSection() -> some View {
@@ -176,7 +205,6 @@ struct CreateWorkoutPlanView: View {
       ScrollView {
         VStack(spacing: 20) {
           videoSelectionSection()
-
           workoutDetailsSection()
           targetMusclesSection()
           workoutsSection()
@@ -192,6 +220,17 @@ struct CreateWorkoutPlanView: View {
       )
       .navigationTitle("Create Workout Plan")
       .navigationBarTitleDisplayMode(.inline)
+      .sheet(isPresented: $showVideoEditor) {
+        VideoEditView { url in
+          Task {
+            let data = try? Data(contentsOf: url)
+            if let data = data {
+              await viewModel.processVideoData(data)
+            }
+            try? FileManager.default.removeItem(at: url)
+          }
+        }
+      }
       .sheet(isPresented: $viewModel.showWorkoutSelector) {
         NavigationStack {
           FindVideoView<Workout>(
