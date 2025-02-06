@@ -6,6 +6,8 @@ import SwiftUI
 struct CreateExerciseView: View {
   @StateObject private var viewModel = CreateExerciseViewModel()
   @State private var showingMuscleSelector = false
+  @State private var showVideoEditor = false
+  @State private var selectedVideoForEdit: PhotosPickerItem?
   @FocusState private var focusedField: Field?
   @Environment(\.presentationMode) var presentationMode
 
@@ -25,13 +27,43 @@ struct CreateExerciseView: View {
   var body: some View {
     ScrollView {
       VStack(spacing: 20) {
-        VideoSelectionView(
-          videoThumbnail: $viewModel.videoThumbnail,
-          showCamera: $viewModel.showCamera,
-          onVideoSelected: { item in
-            await viewModel.loadVideo(from: item)
+        GroupBox(label: Text("Video").bold()) {
+          VStack {
+            if viewModel.isUploading {
+              ProgressView("Uploading video...")
+                .progressViewStyle(CircularProgressViewStyle())
+            } else if let thumbnail = viewModel.videoThumbnail {
+              Image(uiImage: thumbnail)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .frame(height: 200)
+                .clipped()
+            } else {
+              Button(action: { showVideoEditor = true }) {
+                VStack {
+                  Image(systemName: "video.badge.plus")
+                    .font(.system(size: 40))
+                  Text("Add Video")
+                    .font(.headline)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 200)
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(12)
+              }
+            }
+
+            if viewModel.videoThumbnail != nil {
+              Button(action: { showVideoEditor = true }) {
+                Text("Change Video")
+                  .foregroundColor(.blue)
+              }
+              .padding(.top, 8)
+            }
           }
-        )
+        }
+        .padding(.horizontal)
 
         GroupBox(label: Text("Details").bold()) {
           VStack(spacing: 12) {
@@ -161,8 +193,16 @@ struct CreateExerciseView: View {
       .presentationDetents([.medium])
       .presentationDragIndicator(.visible)
     }
-    .sheet(isPresented: $viewModel.showCamera) {
-      CameraView(viewModel: viewModel)
+    .sheet(isPresented: $showVideoEditor) {
+      VideoEditView { url in
+        Task {
+          let data = try? Data(contentsOf: url)
+          if let data = data {
+            await viewModel.processVideoData(data)
+          }
+          try? FileManager.default.removeItem(at: url)
+        }
+      }
     }
     .alert("Error", isPresented: $viewModel.showError) {
       Button("OK", role: .cancel) {

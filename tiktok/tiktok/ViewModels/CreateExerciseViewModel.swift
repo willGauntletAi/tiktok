@@ -325,6 +325,43 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
     }
   }
 
+  func processVideoData(_ data: Data) async {
+    videoData = nil
+
+    do {
+      self.videoData = data
+
+      let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+        UUID().uuidString + ".mov")
+      try data.write(to: tmpURL)
+
+      let asset = AVAsset(url: tmpURL)
+
+      // Configure thumbnail generator
+      let imageGenerator = AVAssetImageGenerator(asset: asset)
+      imageGenerator.appliesPreferredTrackTransform = true
+      imageGenerator.maximumSize = CGSize(width: 400, height: 400)
+      imageGenerator.requestedTimeToleranceBefore = .zero
+      imageGenerator.requestedTimeToleranceAfter = .zero
+
+      // Load duration and generate thumbnail
+      async let duration = asset.load(.duration)
+      async let cgImage = imageGenerator.copyCGImage(at: .zero, actualTime: nil)
+
+      // Wait for both operations to complete
+      self.exercise.duration = Int(try await duration.seconds)
+      self.videoThumbnail = UIImage(cgImage: try await cgImage)
+
+      try FileManager.default.removeItem(at: tmpURL)
+
+    } catch {
+      showError = true
+      errorMessage = "Failed to process video: \(error.localizedDescription)"
+      videoData = nil
+      videoThumbnail = nil
+    }
+  }
+
   nonisolated func captureOutput(
     _ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
     from connection: AVCaptureConnection
