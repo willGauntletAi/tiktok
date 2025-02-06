@@ -4,6 +4,7 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
     @StateObject private var viewModel: FindVideoViewModel<T>
     @StateObject private var authService = AuthService.shared
     @FocusState private var focusedField: Field?
+    @State private var navigationPath = NavigationPath()
     let onItemSelected: ((T) -> Void)?
     let selectedIds: Set<String>
     let type: String
@@ -104,172 +105,125 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
         let selectedIds: Set<String>
         let onToggle: (T) -> Void
         let actionButtonTitle: ((String) -> String)?
-        @State private var selectedItem: T?
-        @State private var isNavigationActive = false
+        @Binding var navigationPath: NavigationPath
 
         var body: some View {
-            ZStack {
-                NavigationLink(
-                    destination: Group {
-                        if let item = selectedItem {
-                            VideoDetailView(
-                                workoutPlan: WorkoutPlan(
+            LazyVStack(spacing: 16) {
+                ForEach(items) { item in
+                    VideoResultCard(
+                        video: item,
+                        isSelected: selectedIds.contains(String(describing: item.id)),
+                        onToggle: onToggle,
+                        addToType: type,
+                        actionButtonTitle: actionButtonTitle
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        print("Tapped item: \(item.id)")
+                        navigationPath.append(item)
+                    }
+                }
+            }
+            .padding(.vertical)
+        }
+    }
+
+    var body: some View {
+        NavigationStack(path: $navigationPath) {
+            VStack(spacing: 0) {
+                SearchSection<T>(
+                    viewModel: viewModel,
+                    focusedField: _focusedField,
+                    type: type
+                )
+
+                // Results Section
+                ScrollView {
+                    if viewModel.isLoading {
+                        ProgressView()
+                            .padding()
+                    } else if let error = viewModel.errorMessage {
+                        Text(error)
+                            .foregroundColor(.red)
+                            .padding()
+                    } else if viewModel.items.isEmpty {
+                        Text("No \(type.lowercased())s found")
+                            .foregroundColor(.gray)
+                            .padding()
+                    } else {
+                        ResultsList(
+                            items: viewModel.items,
+                            type: type,
+                            selectedIds: selectedIds,
+                            onToggle: { item in
+                                onItemSelected?(item)
+                            },
+                            actionButtonTitle: actionButtonTitle,
+                            navigationPath: $navigationPath
+                        )
+                    }
+                }
+            }
+            .background(
+                Color(.systemBackground)
+                    .onTapGesture {
+                        focusedField = nil
+                    }
+            )
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: viewModel.searchText) { _ in
+                Task {
+                    await viewModel.search()
+                }
+            }
+            .onAppear {
+                viewModel.selectedIds = selectedIds
+                if let currentUserEmail = authService.currentUser?.email {
+                    Task {
+                        await viewModel.selectEmail(currentUserEmail)
+                    }
+                }
+            }
+            .navigationDestination(for: T.self) { item in
+                VideoDetailView(
+                    workoutPlan: WorkoutPlan(
+                        id: UUID().uuidString,
+                        title: item.title,
+                        description: item.description,
+                        instructorId: item.instructorId,
+                        videoUrl: item.videoUrl,
+                        thumbnailUrl: item.thumbnailUrl,
+                        difficulty: item.difficulty,
+                        targetMuscles: item.targetMuscles,
+                        workouts: [
+                            WorkoutWithMetadata(
+                                workout: Workout(
                                     id: UUID().uuidString,
                                     title: item.title,
                                     description: item.description,
+                                    exercises: type == "exercise" ? [item as! Exercise] : [],
                                     instructorId: item.instructorId,
                                     videoUrl: item.videoUrl,
                                     thumbnailUrl: item.thumbnailUrl,
                                     difficulty: item.difficulty,
                                     targetMuscles: item.targetMuscles,
-                                    workouts: [
-                                        WorkoutWithMetadata(
-                                            workout: Workout(
-                                                id: UUID().uuidString,
-                                                title: item.title,
-                                                description: item.description,
-                                                exercises: type == "exercise" ? [item as! Exercise] : [],
-                                                instructorId: item.instructorId,
-                                                videoUrl: item.videoUrl,
-                                                thumbnailUrl: item.thumbnailUrl,
-                                                difficulty: item.difficulty,
-                                                targetMuscles: item.targetMuscles,
-                                                totalDuration: (item as? Exercise)?.duration ?? 0,
-                                                createdAt: item.createdAt,
-                                                updatedAt: item.updatedAt
-                                            ),
-                                            weekNumber: 1,
-                                            dayOfWeek: 1
-                                        ),
-                                    ],
-                                    duration: 1,
+                                    totalDuration: (item as? Exercise)?.duration ?? 0,
                                     createdAt: item.createdAt,
                                     updatedAt: item.updatedAt
                                 ),
-                                workoutIndex: 0,
-                                exerciseIndex: type == "exercise" ? 0 : nil
-                            )
-                        }
-                    }, isActive: $isNavigationActive
-                ) {
-                    EmptyView()
-                }
-
-                LazyVStack(spacing: 16) {
-                    ForEach(items) { item in
-                        VideoResultCard(
-                            video: item,
-                            isSelected: selectedIds.contains(String(describing: item.id)),
-                            onToggle: onToggle,
-                            addToType: type,
-                            actionButtonTitle: actionButtonTitle
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            print("Tapped item: \(item.id)")
-                            selectedItem = item
-                            isNavigationActive = true
-                        }
-                    }
-                }
-                .padding(.vertical)
-            }
-        }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            SearchSection<T>(
-                viewModel: viewModel,
-                focusedField: _focusedField,
-                type: type
-            )
-
-            // Results Section
-            ScrollView {
-                if viewModel.isLoading {
-                    ProgressView()
-                        .padding()
-                } else if let error = viewModel.errorMessage {
-                    Text(error)
-                        .foregroundColor(.red)
-                        .padding()
-                } else if viewModel.items.isEmpty {
-                    Text("No \(type.lowercased())s found")
-                        .foregroundColor(.gray)
-                        .padding()
-                } else {
-                    ResultsList(
-                        items: viewModel.items,
-                        type: type,
-                        selectedIds: selectedIds,
-                        onToggle: { item in
-                            onItemSelected?(item)
-                        },
-                        actionButtonTitle: actionButtonTitle
-                    )
-                }
-            }
-        }
-        .background(
-            Color(.systemBackground)
-                .onTapGesture {
-                    focusedField = nil
-                }
-        )
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: viewModel.searchText) { _ in
-            Task {
-                await viewModel.search()
-            }
-        }
-        .onAppear {
-            viewModel.selectedIds = selectedIds
-            if let currentUserEmail = authService.currentUser?.email {
-                Task {
-                    await viewModel.selectEmail(currentUserEmail)
-                }
-            }
-        }
-        .navigationDestination(for: T.self) { item in
-            VideoDetailView(
-                workoutPlan: WorkoutPlan(
-                    id: UUID().uuidString,
-                    title: item.title,
-                    description: item.description,
-                    instructorId: item.instructorId,
-                    videoUrl: item.videoUrl,
-                    thumbnailUrl: item.thumbnailUrl,
-                    difficulty: item.difficulty,
-                    targetMuscles: item.targetMuscles,
-                    workouts: [
-                        WorkoutWithMetadata(
-                            workout: Workout(
-                                id: UUID().uuidString,
-                                title: item.title,
-                                description: item.description,
-                                exercises: type == "exercise" ? [item as! Exercise] : [],
-                                instructorId: item.instructorId,
-                                videoUrl: item.videoUrl,
-                                thumbnailUrl: item.thumbnailUrl,
-                                difficulty: item.difficulty,
-                                targetMuscles: item.targetMuscles,
-                                totalDuration: (item as? Exercise)?.duration ?? 0,
-                                createdAt: item.createdAt,
-                                updatedAt: item.updatedAt
+                                weekNumber: 1,
+                                dayOfWeek: 1
                             ),
-                            weekNumber: 1,
-                            dayOfWeek: 1
-                        ),
-                    ],
-                    duration: 1,
-                    createdAt: item.createdAt,
-                    updatedAt: item.updatedAt
-                ),
-                workoutIndex: 0,
-                exerciseIndex: type == "exercise" ? 0 : nil
-            )
+                        ],
+                        duration: 1,
+                        createdAt: item.createdAt,
+                        updatedAt: item.updatedAt
+                    ),
+                    workoutIndex: 0,
+                    exerciseIndex: type == "exercise" ? 0 : nil
+                )
+            }
         }
     }
 }
