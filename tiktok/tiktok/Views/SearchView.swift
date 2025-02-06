@@ -4,6 +4,7 @@ struct SearchView: View {
   @StateObject private var viewModel = SearchViewModel()
   @State private var selectedItem: (any Identifiable, String)?
   @State private var searchText = ""
+  @EnvironmentObject private var navigator: Navigator
 
   var body: some View {
     VStack(spacing: 0) {
@@ -127,73 +128,6 @@ struct SearchView: View {
     .task {
       await viewModel.search()
     }
-    .navigationDestination(for: SearchDestination.self) { destination in
-      switch destination {
-      case .exercise(let exercise):
-        VideoDetailView(
-          workoutPlan: WorkoutPlan(
-            id: UUID().uuidString,
-            title: exercise.title,
-            description: exercise.description,
-            instructorId: exercise.instructorId,
-            videoUrl: exercise.videoUrl,
-            thumbnailUrl: exercise.thumbnailUrl,
-            difficulty: exercise.difficulty,
-            targetMuscles: exercise.targetMuscles,
-            workouts: [
-              WorkoutWithMetadata(
-                workout: Workout(
-                  id: UUID().uuidString,
-                  title: exercise.title,
-                  description: exercise.description,
-                  exercises: [exercise],
-                  instructorId: exercise.instructorId,
-                  videoUrl: exercise.videoUrl,
-                  thumbnailUrl: exercise.thumbnailUrl,
-                  difficulty: exercise.difficulty,
-                  targetMuscles: exercise.targetMuscles,
-                  totalDuration: exercise.duration,
-                  createdAt: exercise.createdAt,
-                  updatedAt: exercise.updatedAt
-                ),
-                weekNumber: 1,
-                dayOfWeek: 1
-              )
-            ],
-            duration: 1,
-            createdAt: exercise.createdAt,
-            updatedAt: exercise.updatedAt
-          ),
-          workoutIndex: 0,
-          exerciseIndex: 0
-        )
-      case .workout(let workout):
-        VideoDetailView(
-          workoutPlan: WorkoutPlan(
-            id: UUID().uuidString,
-            title: workout.title,
-            description: workout.description,
-            instructorId: workout.instructorId,
-            videoUrl: workout.videoUrl,
-            thumbnailUrl: workout.thumbnailUrl,
-            difficulty: workout.difficulty,
-            targetMuscles: workout.targetMuscles,
-            workouts: [WorkoutWithMetadata(workout: workout, weekNumber: 1, dayOfWeek: 1)],
-            duration: 1,
-            createdAt: workout.createdAt,
-            updatedAt: workout.updatedAt
-          ),
-          workoutIndex: 0,
-          exerciseIndex: nil
-        )
-      case .workoutPlan(let plan):
-        VideoDetailView(
-          workoutPlan: plan,
-          workoutIndex: nil,
-          exerciseIndex: nil
-        )
-      }
-    }
   }
 }
 
@@ -205,9 +139,66 @@ struct ContentCard: View {
   let targetMuscles: [String]
   let contentType: ContentType
   let destination: SearchDestination
+  @EnvironmentObject private var navigator: Navigator
 
   var body: some View {
-    NavigationLink(value: destination) {
+    Button(action: {
+      switch destination {
+      case .exercise(let exercise):
+        let workoutPlan = WorkoutPlan(
+          id: UUID().uuidString,
+          title: exercise.title,
+          description: exercise.description,
+          instructorId: exercise.instructorId,
+          videoUrl: exercise.videoUrl,
+          thumbnailUrl: exercise.thumbnailUrl,
+          difficulty: exercise.difficulty,
+          targetMuscles: exercise.targetMuscles,
+          workouts: [
+            WorkoutWithMetadata(
+              workout: Workout(
+                id: UUID().uuidString,
+                title: exercise.title,
+                description: exercise.description,
+                exercises: [exercise],
+                instructorId: exercise.instructorId,
+                videoUrl: exercise.videoUrl,
+                thumbnailUrl: exercise.thumbnailUrl,
+                difficulty: exercise.difficulty,
+                targetMuscles: exercise.targetMuscles,
+                totalDuration: exercise.duration,
+                createdAt: exercise.createdAt,
+                updatedAt: exercise.updatedAt
+              ),
+              weekNumber: 1,
+              dayOfWeek: 1
+            )
+          ],
+          duration: 1,
+          createdAt: exercise.createdAt,
+          updatedAt: exercise.updatedAt
+        )
+        navigator.navigate(to: .videoDetail(workoutPlan: workoutPlan, workoutIndex: 0, exerciseIndex: 0))
+      case .workout(let workout):
+        let workoutPlan = WorkoutPlan(
+          id: UUID().uuidString,
+          title: workout.title,
+          description: workout.description,
+          instructorId: workout.instructorId,
+          videoUrl: workout.videoUrl,
+          thumbnailUrl: workout.thumbnailUrl,
+          difficulty: workout.difficulty,
+          targetMuscles: workout.targetMuscles,
+          workouts: [WorkoutWithMetadata(workout: workout, weekNumber: 1, dayOfWeek: 1)],
+          duration: 1,
+          createdAt: workout.createdAt,
+          updatedAt: workout.updatedAt
+        )
+        navigator.navigate(to: .videoDetail(workoutPlan: workoutPlan, workoutIndex: 0, exerciseIndex: nil))
+      case .workoutPlan(let plan):
+        navigator.navigate(to: .videoDetail(workoutPlan: plan, workoutIndex: nil, exerciseIndex: nil))
+      }
+    }) {
       VStack(alignment: .leading) {
         AsyncImage(url: URL(string: thumbnailUrl)) { image in
           image

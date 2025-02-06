@@ -3,6 +3,10 @@ import SwiftUI
 enum AppRoute: Hashable {
   case profile  // Current user's profile
   case userProfile(userId: String)  // Other user's profile
+  case exercise(Exercise)
+  case workout(Workout)
+  case workoutPlan(WorkoutPlan)
+  case videoDetail(workoutPlan: WorkoutPlan, workoutIndex: Int?, exerciseIndex: Int?)
   // Add additional routes as needed
 }
 

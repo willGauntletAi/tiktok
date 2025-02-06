@@ -26,6 +26,15 @@ struct ContentView: View {
                   ProfileView()
                 case .userProfile(let userId):
                   ProfileView(userId: userId)
+                case .videoDetail(let workoutPlan, let workoutIndex, let exerciseIndex):
+                  VideoDetailView(
+                    workoutPlan: workoutPlan,
+                    workoutIndex: workoutIndex,
+                    exerciseIndex: exerciseIndex
+                  )
+                case .exercise, .workout, .workoutPlan:
+                  // These are handled by converting to videoDetail in the ContentCard
+                  EmptyView()
                 }
               }
           }
@@ -42,6 +51,14 @@ struct ContentView: View {
                   ProfileView()
                 case .userProfile(let userId):
                   ProfileView(userId: userId)
+                case .videoDetail(let workoutPlan, let workoutIndex, let exerciseIndex):
+                  VideoDetailView(
+                    workoutPlan: workoutPlan,
+                    workoutIndex: workoutIndex,
+                    exerciseIndex: exerciseIndex
+                  )
+                case .exercise, .workout, .workoutPlan:
+                  EmptyView()
                 }
               }
           }
@@ -58,6 +75,14 @@ struct ContentView: View {
                   ProfileView()
                 case .userProfile(let userId):
                   ProfileView(userId: userId)
+                case .videoDetail(let workoutPlan, let workoutIndex, let exerciseIndex):
+                  VideoDetailView(
+                    workoutPlan: workoutPlan,
+                    workoutIndex: workoutIndex,
+                    exerciseIndex: exerciseIndex
+                  )
+                case .exercise, .workout, .workoutPlan:
+                  EmptyView()
                 }
               }
           }
