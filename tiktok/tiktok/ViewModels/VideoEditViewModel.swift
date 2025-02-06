@@ -32,7 +32,7 @@ class VideoEditViewModel: ObservableObject {
 
   // Make player accessible to the view
   var player: AVPlayer? {
-    get { _player }
+    _player
   }
   private var _player: AVPlayer?
   private var playerItem: AVPlayerItem?
@@ -67,23 +67,105 @@ class VideoEditViewModel: ObservableObject {
       clips.append(clip)
       selectedClipIndex = clips.count - 1
 
-      // Setup player for the new clip
-      try await setupPlayer(with: clip)
+      // Setup player with combined clips
+      try await setupPlayerWithComposition()
 
     } catch {
       throw error
     }
   }
 
-  private func setupPlayer(with clip: VideoClip) async throws {
+  private func setupPlayerWithComposition() async throws {
     // Remove existing time observer
     if let timeObserver = timeObserver {
       _player?.removeTimeObserver(timeObserver)
       self.timeObserver = nil
     }
 
-    // Create new player item with the asset
-    let playerItem = AVPlayerItem(asset: clip.asset)
+    guard !clips.isEmpty else { return }
+
+    // Create composition
+    let composition = AVMutableComposition()
+    let videoComposition = AVMutableVideoComposition()
+
+    // Create composition tracks
+    guard
+      let compositionVideoTrack = composition.addMutableTrack(
+        withMediaType: .video,
+        preferredTrackID: kCMPersistentTrackID_Invalid),
+      let compositionAudioTrack = composition.addMutableTrack(
+        withMediaType: .audio,
+        preferredTrackID: kCMPersistentTrackID_Invalid)
+    else {
+      throw NSError(
+        domain: "", code: -1,
+        userInfo: [NSLocalizedDescriptionKey: "Failed to create composition tracks"])
+    }
+
+    var currentTime = CMTime.zero
+    var instructions: [AVMutableVideoCompositionInstruction] = []
+
+    // Process each clip
+    for clip in clips {
+      do {
+        // Load tracks for current clip
+        let videoTrack = try await clip.asset.loadTracks(withMediaType: .video).first
+        let audioTrack = try await clip.asset.loadTracks(withMediaType: .audio).first
+
+        guard let videoTrack = videoTrack, let audioTrack = audioTrack else { continue }
+
+        // Calculate time range for the clip
+        let timeRange = CMTimeRange(
+          start: CMTime(seconds: clip.startTime, preferredTimescale: 600),
+          end: CMTime(seconds: clip.endTime, preferredTimescale: 600)
+        )
+        let clipDuration = timeRange.duration
+
+        // Insert tracks into composition
+        try compositionVideoTrack.insertTimeRange(timeRange, of: videoTrack, at: currentTime)
+        try compositionAudioTrack.insertTimeRange(timeRange, of: audioTrack, at: currentTime)
+
+        // Create instruction for this clip
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = CMTimeRange(start: currentTime, duration: clipDuration)
+
+        // Get and apply the original transform
+        let originalTransform = try await videoTrack.load(.preferredTransform)
+        let naturalSize = try await videoTrack.load(.naturalSize)
+
+        let layerInstruction = AVMutableVideoCompositionLayerInstruction(
+          assetTrack: compositionVideoTrack)
+        layerInstruction.setTransform(originalTransform, at: currentTime)
+        instruction.layerInstructions = [layerInstruction]
+        instructions.append(instruction)
+
+        // Update current time for next clip
+        currentTime = CMTimeAdd(currentTime, clipDuration)
+      } catch {
+        print("Error processing clip: \(error)")
+        continue
+      }
+    }
+
+    // Setup video composition
+    if let firstClip = clips.first,
+      let videoTrack = try? await firstClip.asset.loadTracks(withMediaType: .video).first
+    {
+      let naturalSize = try await videoTrack.load(.naturalSize)
+      let transform = try await videoTrack.load(.preferredTransform)
+
+      let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
+      let renderWidth = isVideoPortrait ? naturalSize.height : naturalSize.width
+      let renderHeight = isVideoPortrait ? naturalSize.width : naturalSize.height
+
+      videoComposition.renderSize = CGSize(width: renderWidth, height: renderHeight)
+      videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+      videoComposition.instructions = instructions
+    }
+
+    // Create player item with composition
+    let playerItem = AVPlayerItem(asset: composition)
+    playerItem.videoComposition = videoComposition
     self.playerItem = playerItem
 
     // Create and configure player
@@ -94,24 +176,19 @@ class VideoEditViewModel: ObservableObject {
     let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
     timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) {
       [weak self] time in
-      guard let self = self,
-        let currentClip = self.selectedClip
-      else { return }
+      guard let self = self else { return }
 
       let currentTime = time.seconds
-      if currentTime >= currentClip.endTime {
+      if currentTime >= self.totalDuration {
         Task { @MainActor in
-          if let player = self._player {
-            await player.seek(to: CMTime(seconds: currentClip.startTime, preferredTimescale: 600))
-            player.play()
-          }
+          await player.seek(to: .zero)
+          player.play()
         }
       }
     }
 
-    // Set initial volume and seek to start
+    // Set initial volume
     updatePlayerVolume()
-    await player.seek(to: CMTime(seconds: clip.startTime, preferredTimescale: 600))
   }
 
   private func updatePlayerTime() {
@@ -147,8 +224,10 @@ class VideoEditViewModel: ObservableObject {
     clip.endTime = endTime
     clips[index] = clip
 
-    // Update player position if needed
-    Task { @MainActor in
+    // Update player with new composition
+    Task {
+      try? await setupPlayerWithComposition()
+      // Seek to start of modified clip
       if let player = _player {
         await player.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
       }
@@ -172,12 +251,20 @@ class VideoEditViewModel: ObservableObject {
     {
       selectedClipIndex = sourceFirst < selected ? (selected - 1) : (selected + 1)
     }
+    // Update player with new clip order
+    Task {
+      try? await setupPlayerWithComposition()
+    }
   }
 
   func deleteClip(at index: Int) {
     clips.remove(at: index)
     if selectedClipIndex == index {
       selectedClipIndex = clips.isEmpty ? nil : min(index, clips.count - 1)
+    }
+    // Update player with remaining clips
+    Task {
+      try? await setupPlayerWithComposition()
     }
   }
 
