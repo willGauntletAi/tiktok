@@ -7,6 +7,7 @@ enum AppRoute: Hashable {
     case workout(Workout)
     case workoutPlan(WorkoutPlan)
     case videoDetail(workoutPlan: WorkoutPlan, workoutIndex: Int?, exerciseIndex: Int?)
+    case exerciseCompletion(exercise: Exercise)
     // Add additional routes as needed
 }
 

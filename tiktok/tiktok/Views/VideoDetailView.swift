@@ -257,6 +257,27 @@ struct VideoDetailView: View {
                             }
                         }
                         .accessibilityLabel("View Comments")
+
+                        // Exercise Completion Button (only show for exercises)
+                        if let exercise = currentExercise {
+                            Button(action: {
+                                navigator.navigate(to: .exerciseCompletion(exercise: exercise))
+                            }) {
+                                VStack {
+                                    Image(systemName: "checkmark.circle")
+                                        .font(.system(size: 28))
+                                        .foregroundColor(.white)
+                                        .shadow(radius: 2)
+
+                                    Text("Complete")
+                                        .font(.caption)
+                                        .foregroundColor(.white)
+                                        .shadow(radius: 2)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .accessibilityLabel("Record Exercise Completion")
+                        }
                     }
                     .frame(width: 80)
                     .padding(.trailing, 16)

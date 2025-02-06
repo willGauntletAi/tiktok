@@ -32,6 +32,8 @@ struct ContentView: View {
                                         workoutIndex: workoutIndex,
                                         exerciseIndex: exerciseIndex
                                     )
+                                case let .exerciseCompletion(exercise):
+                                    ExerciseCompletionView(exercise: exercise)
                                 case .exercise, .workout, .workoutPlan:
                                     // These are handled by converting to videoDetail in the ContentCard
                                     EmptyView()
@@ -57,6 +59,8 @@ struct ContentView: View {
                                         workoutIndex: workoutIndex,
                                         exerciseIndex: exerciseIndex
                                     )
+                                case let .exerciseCompletion(exercise):
+                                    ExerciseCompletionView(exercise: exercise)
                                 case .exercise, .workout, .workoutPlan:
                                     EmptyView()
                                 }
@@ -81,6 +85,8 @@ struct ContentView: View {
                                         workoutIndex: workoutIndex,
                                         exerciseIndex: exerciseIndex
                                     )
+                                case let .exerciseCompletion(exercise):
+                                    ExerciseCompletionView(exercise: exercise)
                                 case .exercise, .workout, .workoutPlan:
                                     EmptyView()
                                 }
