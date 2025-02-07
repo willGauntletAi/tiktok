@@ -98,18 +98,7 @@ struct ProfileView: View {
                 Text(viewModel.error ?? "")
             }
             .task {
-                print("🎬 ProfileView: Task started")
-                print("🎬 ProfileView: userId = \(String(describing: viewModel.userId))")
-                print("🎬 ProfileView: currentUser = \(String(describing: Auth.auth().currentUser?.uid))")
                 await viewModel.fetchUserProfile()
-            }
-            .onAppear {
-                print("🔍 ProfileView: View appeared")
-                print("🔍 ProfileView: userId = \(String(describing: viewModel.userId))")
-                print("🔍 ProfileView: currentUser = \(String(describing: Auth.auth().currentUser?.uid))")
-                if let user = viewModel.user {
-                    print("🔍 ProfileView: user loaded - \(user.displayName) (ID: \(user.id))")
-                }
             }
         }
     }

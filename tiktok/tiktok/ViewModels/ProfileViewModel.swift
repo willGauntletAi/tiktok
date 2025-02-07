@@ -16,15 +16,12 @@ class ProfileViewModel: ObservableObject {
     private let auth = Auth.auth()
 
     init(userId: String? = nil) {
-        print("🎬 ProfileViewModel: Initializing with userId: \(userId ?? "nil (current user)")")
         self.userId = userId
 
         // If we're showing the current user's profile, verify auth state
         if userId == nil {
-            if let currentUserId = Auth.auth().currentUser?.uid {
-                print("🎬 ProfileViewModel: Current user is authenticated: \(currentUserId)")
-            } else {
-                print("❌ ProfileViewModel: No authenticated user when trying to show current user's profile")
+            if Auth.auth().currentUser?.uid == nil {
+                error = "No authenticated user when trying to show current user's profile"
             }
         }
     }
@@ -65,9 +62,6 @@ class ProfileViewModel: ObservableObject {
 
     @MainActor
     func fetchUserProfile() async {
-        print("🎬 ProfileViewModel: Starting fetch with userId: \(userId ?? "nil (current user)")")
-        print("🎬 ProfileViewModel: Current auth user ID: \(auth.currentUser?.uid ?? "no auth user")")
-
         isLoading = true
         error = nil
 
@@ -75,23 +69,17 @@ class ProfileViewModel: ObservableObject {
             let targetUserId = userId ?? auth.currentUser?.uid
             guard let targetUserId = targetUserId else {
                 error = "No authenticated user"
-                print("❌ ProfileViewModel: No authenticated user found")
                 isLoading = false
                 return
             }
-
-            print("🎬 ProfileViewModel: Fetching data for user: \(targetUserId)")
 
             // Fetch user data
             let userDoc = try await db.collection("users").document(targetUserId).getDocument()
             guard let userData = userDoc.data() else {
                 error = "User data not found"
-                print("❌ ProfileViewModel: No user data found for ID: \(targetUserId)")
                 isLoading = false
                 return
             }
-
-            print("✅ ProfileViewModel: Found user data")
 
             // Create user object
             user = User(
@@ -108,12 +96,9 @@ class ProfileViewModel: ObservableObject {
                 .order(by: "createdAt", descending: true)
 
             let videosDocs = try await videosQuery.getDocuments()
-            print("🎬 ProfileViewModel: Found \(videosDocs.documents.count) videos")
-
             userVideos = videosDocs.documents.compactMap { doc in
                 createVideoFromDoc(doc)
             }
-            print("🎬 ProfileViewModel: Processed \(userVideos.count) user videos")
 
             // Fetch liked videos only for current user
             if userId == nil {
@@ -123,36 +108,28 @@ class ProfileViewModel: ObservableObject {
 
                 let likedDocs = try await likedVideosQuery.getDocuments()
                 let videoIds = likedDocs.documents.compactMap { $0.data()["videoId"] as? String }
-                print("🎬 ProfileViewModel: Found \(videoIds.count) liked video IDs: \(videoIds)")
 
                 // Fetch the actual video documents
                 likedVideos = []
                 for videoId in videoIds {
-                    print("🎬 ProfileViewModel: Fetching liked video: \(videoId)")
                     do {
                         let doc = try await db.collection("videos").document(videoId).getDocument()
                         if doc.exists {
                             if let video = createVideoFromDoc(doc) {
                                 likedVideos.append(video)
-                                print("✅ ProfileViewModel: Successfully added liked video: \(videoId)")
-                            } else {
-                                print("❌ ProfileViewModel: Failed to create video object for: \(videoId)")
                             }
                         } else {
-                            print("❌ ProfileViewModel: Liked video document doesn't exist: \(videoId)")
-                            // Optionally clean up the orphaned like
+                            // Clean up orphaned like
                             try? await cleanupOrphanedLike(videoId: videoId, userId: targetUserId)
                         }
                     } catch {
-                        print("❌ ProfileViewModel: Error fetching liked video \(videoId): \(error.localizedDescription)")
+                        self.error = "Error fetching liked video: \(error.localizedDescription)"
                     }
                 }
-                print("🎬 ProfileViewModel: Processed \(likedVideos.count) liked videos")
             }
 
         } catch {
             self.error = error.localizedDescription
-            print("❌ ProfileViewModel: Error fetching data: \(error.localizedDescription)")
         }
 
         isLoading = false
@@ -176,7 +153,6 @@ class ProfileViewModel: ObservableObject {
     }
 
     private func cleanupOrphanedLike(videoId: String, userId: String) async throws {
-        print("🧹 ProfileViewModel: Cleaning up orphaned like for video: \(videoId)")
         // Find and delete the orphaned like document
         let likeDocs = try await db.collection("likes")
             .whereField("userId", isEqualTo: userId)
@@ -185,7 +161,6 @@ class ProfileViewModel: ObservableObject {
 
         for doc in likeDocs.documents {
             try await doc.reference.delete()
-            print("✅ ProfileViewModel: Deleted orphaned like document: \(doc.documentID)")
         }
     }
 
@@ -200,7 +175,6 @@ class ProfileViewModel: ObservableObject {
             likedVideos = []
         } catch {
             self.error = error.localizedDescription
-            print("Error signing out: \(error)")
         }
         isSigningOut = false
     }
