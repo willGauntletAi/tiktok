@@ -1,6 +1,24 @@
 import AVKit
 import SwiftUI
 
+struct ProfileVideoWrapper: View {
+    let workoutPlan: WorkoutPlan
+    @EnvironmentObject private var navigator: Navigator
+
+    var body: some View {
+        VideoDetailView(workoutPlan: workoutPlan)
+            .gesture(
+                DragGesture()
+                    .onEnded { value in
+                        if value.translation.width > 100 {
+                            print("🎬 Left swipe detected, popping navigation")
+                            navigator.pop()
+                        }
+                    }
+            )
+    }
+}
+
 struct VideoFeedView: View {
     let initialVideos: [WorkoutPlan]
     let initialIndex: Int
@@ -9,7 +27,7 @@ struct VideoFeedView: View {
     @State private var videos: [WorkoutPlan]
     @State private var isLoadingMore = false
     @State private var recommendations: [VideoRecommendation] = []
-    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var navigator: Navigator
 
     private let recommendationService = RecommendationService()
 
@@ -47,18 +65,19 @@ struct VideoFeedView: View {
                     }
                 }
             }
-            .gesture(
-                DragGesture()
-                    .onEnded { value in
-                        // Check if it's a left swipe
-                        if value.translation.width > 100 {
-                            print("🎬 Left swipe detected, dismissing")
-                            dismiss()
-                        }
-                    }
-            )
         }
         .ignoresSafeArea()
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        .gesture(
+            DragGesture()
+                .onEnded { value in
+                    if value.translation.width > 100 {
+                        print("🎬 Left swipe detected, popping navigation")
+                        navigator.pop()
+                    }
+                }
+        )
         .task {
             // Only load more if we have initial videos to base recommendations on
             if !initialVideos.isEmpty {

@@ -64,12 +64,11 @@ struct VideoGridView: View {
                         updatedAt: video.updatedAt
                     )
 
-                    NavigationLink(
-                        value: AppRoute.videoDetail(workoutPlan: workoutPlan, workoutIndex: 0, exerciseIndex: 0)
-                    ) {
-                        VideoThumbnailView(video: video)
-                            .frame(height: UIScreen.main.bounds.width / 3)
-                    }
+                    VideoThumbnailView(video: video)
+                        .frame(height: UIScreen.main.bounds.width / 3)
+                        .onTapGesture {
+                            navigator.navigate(to: .profileVideo(workoutPlan: workoutPlan))
+                        }
                 }
             }
             .padding(.horizontal, 1)
