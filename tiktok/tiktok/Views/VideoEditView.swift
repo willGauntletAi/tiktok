@@ -1,6 +1,68 @@
 import AVKit
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
+
+struct VideoPicker: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    let onVideoSelected: (URL) -> Void
+    
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var config = PHPickerConfiguration()
+        config.filter = .videos
+        config.selectionLimit = 1
+        let picker = PHPickerViewController(configuration: config)
+        picker.delegate = context.coordinator
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, PHPickerViewControllerDelegate {
+        let parent: VideoPicker
+        
+        init(_ parent: VideoPicker) {
+            self.parent = parent
+        }
+        
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            parent.isPresented = false
+            
+            guard let provider = results.first?.itemProvider else { return }
+            
+            if provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
+                provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, error in
+                    if let error = error {
+                        print("Error loading video: \(error.localizedDescription)")
+                        return
+                    }
+                    
+                    guard let url = url else { return }
+                    
+                    // Create a temporary copy of the video file
+                    let tempURL = FileManager.default.temporaryDirectory
+                        .appendingPathComponent(UUID().uuidString)
+                        .appendingPathExtension("mov")
+                    
+                    do {
+                        try FileManager.default.copyItem(at: url, to: tempURL)
+                        
+                        // Call onVideoSelected on the main thread
+                        DispatchQueue.main.async {
+                            self.parent.onVideoSelected(tempURL)
+                        }
+                    } catch {
+                        print("Error copying video: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+}
 
 struct VideoTimelineView: View {
     @ObservedObject var viewModel: VideoEditViewModel
@@ -216,9 +278,9 @@ struct VideoTimelineView: View {
 struct VideoEditView: View {
     @StateObject private var viewModel = VideoEditViewModel()
     @State private var showingExportError = false
-    @State private var selectedItem: PhotosPickerItem?
     @State private var isAddingClip = false
     @State private var showCamera = false
+    @State private var showVideoPicker = false
     @Environment(\.dismiss) private var dismiss
     var onVideoEdited: ((URL) -> Void)?
 
@@ -270,12 +332,8 @@ struct VideoEditView: View {
                         .disabled(isAddingClip)
 
                         // Library button
-                        PhotosPicker(
-                            selection: $selectedItem,
-                            matching: .videos,
-                            photoLibrary: .shared()
-                        ) {
-                            Text(isAddingClip ? "Adding..." : "Add Clip")
+                        Button(isAddingClip ? "Adding..." : "Add Clip") {
+                            showVideoPicker = true
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
@@ -344,38 +402,20 @@ struct VideoEditView: View {
         } message: {
             Text(viewModel.errorMessage ?? "Failed to export video")
         }
-        .onChange(of: selectedItem) { _, newValue in
-            if let item = newValue {
-                print("Starting to process selected item")
+        .sheet(isPresented: $showVideoPicker) {
+            VideoPicker(isPresented: $showVideoPicker) { url in
                 Task {
                     isAddingClip = true
                     print("isAddingClip set to true")
                     do {
-                        if let data = try await item.loadTransferable(type: Data.self) {
-                            print("Successfully loaded transferable data")
-                            let tempURL = FileManager.default.temporaryDirectory
-                                .appendingPathComponent(UUID().uuidString)
-                                .appendingPathExtension("mov")
-
-                            do {
-                                try data.write(to: tempURL)
-                                print("Successfully wrote data to temp file: \(tempURL)")
-                                try await viewModel.addClip(from: tempURL)
-                                print("Successfully added clip to viewModel")
-                            } catch {
-                                print("Error adding clip: \(error.localizedDescription)")
-                                print("Error details: \(error)")
-                            }
-                        } else {
-                            print("Failed to load transferable data")
-                        }
+                        try await viewModel.addClip(from: url)
+                        print("Successfully added clip")
                     } catch {
-                        print("Error loading transferable: \(error.localizedDescription)")
+                        print("Error adding clip: \(error.localizedDescription)")
                         print("Error details: \(error)")
                     }
-                    selectedItem = nil
                     isAddingClip = false
-                    print("Finished processing selected item, isAddingClip set to false")
+                    print("isAddingClip set to false")
                 }
             }
         }

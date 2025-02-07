@@ -121,12 +121,16 @@ struct CreateWorkoutPlanView: View {
                         .foregroundColor(.gray)
                         .padding(.vertical)
                 } else {
-                    List {
-                        let groupedWorkouts = Dictionary(grouping: viewModel.selectedWorkouts) {
-                            $0.workoutWithMeta.weekNumber
-                        }
+                    let groupedWorkouts = Dictionary(grouping: viewModel.selectedWorkouts) {
+                        $0.workoutWithMeta.weekNumber
+                    }
+                    VStack(spacing: 16) {
                         ForEach(groupedWorkouts.keys.sorted(), id: \.self) { week in
-                            Section(header: Text("Week \(week)").font(.headline)) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Week \(week)")
+                                    .font(.headline)
+                                    .padding(.horizontal)
+                                
                                 ForEach(
                                     groupedWorkouts[week]?.sorted(by: {
                                         $0.workoutWithMeta.dayOfWeek < $1.workoutWithMeta.dayOfWeek
@@ -156,22 +160,24 @@ struct CreateWorkoutPlanView: View {
                                             }
                                         }
                                         Spacer()
-                                        Image(systemName: "line.3.horizontal")
-                                            .foregroundColor(.gray)
+                                        Button(action: {
+                                            if let index = viewModel.selectedWorkouts.firstIndex(where: { $0.id == workoutInstance.id }) {
+                                                viewModel.removeWorkout(at: IndexSet(integer: index))
+                                            }
+                                        }) {
+                                            Image(systemName: "trash")
+                                                .foregroundColor(.red)
+                                        }
                                     }
-                                    .contentShape(Rectangle())
+                                    .padding()
+                                    .background(Color(.systemBackground))
+                                    .cornerRadius(8)
+                                    .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
                                 }
                             }
                         }
-                        .onMove { source, destination in
-                            viewModel.moveWorkout(from: source, to: destination)
-                        }
-                        .onDelete { offsets in
-                            viewModel.removeWorkout(at: offsets)
-                        }
                     }
-                    .frame(height: CGFloat(viewModel.selectedWorkouts.count * 60))
-                    .listStyle(PlainListStyle())
+                    .padding(.vertical, 8)
                 }
             }
         }
