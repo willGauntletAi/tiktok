@@ -7,7 +7,7 @@ struct ProfileView: View {
     @EnvironmentObject private var navigator: Navigator
 
     init(userId: String? = nil) {
-        self._viewModel = StateObject(wrappedValue: ProfileViewModel(userId: userId))
+        _viewModel = StateObject(wrappedValue: ProfileViewModel(userId: userId))
     }
 
     var body: some View {

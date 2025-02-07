@@ -136,7 +136,7 @@ class CameraViewModel: NSObject, ObservableObject {
     private var sessionQueue = DispatchQueue(label: "video.preview.session")
     private var videoDataOutput: AVCaptureVideoDataOutput?
     private var videoDataOutputQueue = DispatchQueue(label: "VideoDataOutput", qos: .userInitiated)
-    
+
     private let frameHandler: FrameHandler
 
     lazy var previewStream: AsyncStream<CGImage> = AsyncStream { [weak self] continuation in
@@ -227,7 +227,7 @@ class CameraViewModel: NSObject, ObservableObject {
             throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Cannot add video output"])
         }
         session.addOutput(videoOutput)
-        self.videoDataOutput = videoOutput
+        videoDataOutput = videoOutput
 
         // Configure video connection
         if let connection = videoOutput.connection(with: .video) {
@@ -277,7 +277,7 @@ class CameraViewModel: NSObject, ObservableObject {
 
     func switchCamera() async {
         guard let session = captureSession else { return }
-        
+
         // Don't allow switching while recording
         guard !isRecording else { return }
 
@@ -291,7 +291,7 @@ class CameraViewModel: NSObject, ObservableObject {
         do {
             // Get new camera position
             let newPosition: AVCaptureDevice.Position = currentCameraPosition == .back ? .front : .back
-            
+
             // Get new camera device
             guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: newPosition) else {
                 throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to get camera device"])
@@ -327,21 +327,23 @@ class CameraViewModel: NSObject, ObservableObject {
 }
 
 // MARK: - Frame Handler
+
 actor FrameHandler {
     private var onFrame: ((CGImage) -> Void)?
-    
+
     func setFrameHandler(_ handler: @escaping (CGImage) -> Void) {
         onFrame = handler
     }
-    
+
     func handle(_ image: CGImage) {
         onFrame?(image)
     }
 }
 
 // MARK: - AVCaptureVideoDataOutputSampleBufferDelegate
+
 extension CameraViewModel: AVCaptureVideoDataOutputSampleBufferDelegate {
-    nonisolated func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+    nonisolated func captureOutput(_: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from _: AVCaptureConnection) {
         guard let imageBuffer = sampleBuffer.imageBuffer else { return }
 
         if let cgImage = try? imageBuffer.cgImage() {
@@ -356,7 +358,7 @@ extension CVPixelBuffer {
     func cgImage() throws -> CGImage {
         var cgImage: CGImage?
         let options = [kCVPixelBufferCGImageCompatibilityKey: true,
-                      kCVPixelBufferCGBitmapContextCompatibilityKey: true] as CFDictionary
+                       kCVPixelBufferCGBitmapContextCompatibilityKey: true] as CFDictionary
         VTCreateCGImageFromCVPixelBuffer(self, options: options, imageOut: &cgImage)
         guard let image = cgImage else {
             throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create CGImage"])

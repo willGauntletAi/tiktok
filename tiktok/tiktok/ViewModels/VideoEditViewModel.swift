@@ -393,7 +393,7 @@ class VideoEditViewModel: ObservableObject {
                 // Re-add all remaining clips
                 for (index, clip) in clips.enumerated() {
                     print("Processing clip \(index) - assetStartTime: \(clip.assetStartTime), assetDuration: \(clip.assetDuration)")
-                    
+
                     // Add video track
                     let videoTracks = try await clip.asset.loadTracks(withMediaType: AVMediaType.video)
                     guard let videoTrack = videoTracks.first,
@@ -615,9 +615,9 @@ class VideoEditViewModel: ObservableObject {
 
     private func setupPlayerWithComposition() async {
         print("Starting setupPlayerWithComposition")
-        guard let _ = composition else { 
+        guard let _ = composition else {
             print("No composition available")
-            return 
+            return
         }
 
         do {
@@ -634,12 +634,12 @@ class VideoEditViewModel: ObservableObject {
             for (index, clip) in clips.enumerated() {
                 print("Processing clip \(index) with startTime: \(clip.startTime), endTime: \(clip.endTime)")
                 print("Clip \(index) asset start time: \(clip.assetStartTime), duration: \(clip.assetDuration)")
-                
+
                 if let videoTrack = try await clip.asset.loadTracks(withMediaType: AVMediaType.video).first {
                     let naturalSize = try await videoTrack.load(.naturalSize)
                     let transform = try await videoTrack.load(.preferredTransform)
                     let assetDuration = try await clip.asset.load(.duration)
-                    
+
                     print("Clip \(index) full asset duration: \(assetDuration.seconds)")
 
                     // Add video track
@@ -769,10 +769,10 @@ class VideoEditViewModel: ObservableObject {
             await MainActor.run {
                 isProcessing = true
             }
-            
+
             // Recalculate clip times based on their new positions
             var currentTime = 0.0
-            for i in 0..<clips.count {
+            for i in 0 ..< clips.count {
                 let clipDuration = clips[i].endTime - clips[i].startTime
                 var updatedClip = clips[i]
                 updatedClip.startTime = currentTime
@@ -781,9 +781,9 @@ class VideoEditViewModel: ObservableObject {
                 print("Updated clip \(i) times - start: \(currentTime), end: \(currentTime + clipDuration)")
                 currentTime += clipDuration
             }
-            
+
             await setupPlayerWithComposition()
-            
+
             await MainActor.run {
                 isProcessing = false
                 print("Completed swapClips operation")
@@ -793,9 +793,10 @@ class VideoEditViewModel: ObservableObject {
 
     func splitClip(at time: Double) async {
         print("Starting splitClip operation at time: \(time)")
-        if ( clips.isEmpty ||
-              !time.isFinite ||
-             time.isNaN) {
+        if clips.isEmpty ||
+            !time.isFinite ||
+            time.isNaN
+        {
             print("Invalid split parameters")
             return
         }
@@ -976,7 +977,7 @@ class VideoEditViewModel: ObservableObject {
                         var firstClip = clips[clipIndex]
                         firstClip.thumbnail = firstThumbnail
                         firstClip.endTime = time
-                        firstClip.assetDuration = relativeTime  // Set the duration of the first part
+                        firstClip.assetDuration = relativeTime // Set the duration of the first part
                         clips[clipIndex] = firstClip
 
                         // Create and insert the second part
@@ -986,7 +987,7 @@ class VideoEditViewModel: ObservableObject {
                             endTime: currentClip.endTime,
                             thumbnail: secondThumbnail,
                             assetStartTime: relativeTime,
-                            assetDuration: currentClip.assetDuration - relativeTime  // Set the remaining duration
+                            assetDuration: currentClip.assetDuration - relativeTime // Set the remaining duration
                         )
                         clips.insert(secondClip, at: clipIndex + 1)
                     }

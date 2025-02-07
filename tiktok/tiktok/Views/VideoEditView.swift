@@ -7,7 +7,7 @@ struct VideoPicker: UIViewControllerRepresentable {
     @Binding var isPresented: Bool
     @Binding var isAddingClip: Bool
     let onVideoSelected: (URL) -> Void
-    
+
     func makeUIViewController(context: Context) -> PHPickerViewController {
         var config = PHPickerConfiguration()
         config.filter = .videos
@@ -16,23 +16,23 @@ struct VideoPicker: UIViewControllerRepresentable {
         picker.delegate = context.coordinator
         return picker
     }
-    
-    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
-    
+
+    func updateUIViewController(_: PHPickerViewController, context _: Context) {}
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
-    
+
     class Coordinator: NSObject, PHPickerViewControllerDelegate {
         let parent: VideoPicker
-        
+
         init(_ parent: VideoPicker) {
             self.parent = parent
         }
-        
-        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+
+        func picker(_: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             parent.isPresented = false
-            
+
             guard let provider = results.first?.itemProvider else {
                 // If no video was selected, reset the isAddingClip state
                 DispatchQueue.main.async {
@@ -40,12 +40,12 @@ struct VideoPicker: UIViewControllerRepresentable {
                 }
                 return
             }
-            
+
             // Set isAddingClip to true as soon as a video is selected
             DispatchQueue.main.async {
                 self.parent.isAddingClip = true
             }
-            
+
             if provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
                 provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, error in
                     if let error = error {
@@ -55,22 +55,22 @@ struct VideoPicker: UIViewControllerRepresentable {
                         }
                         return
                     }
-                    
+
                     guard let url = url else {
                         DispatchQueue.main.async {
                             self.parent.isAddingClip = false
                         }
                         return
                     }
-                    
+
                     // Create a temporary copy of the video file
                     let tempURL = FileManager.default.temporaryDirectory
                         .appendingPathComponent(UUID().uuidString)
                         .appendingPathExtension("mov")
-                    
+
                     do {
                         try FileManager.default.copyItem(at: url, to: tempURL)
-                        
+
                         // Call onVideoSelected on the main thread
                         DispatchQueue.main.async {
                             self.parent.onVideoSelected(tempURL)
@@ -291,7 +291,7 @@ struct VideoTimelineView: View {
         guard seconds.isFinite, !seconds.isNaN, seconds >= 0 else {
             return "0:00"
         }
-        
+
         let minutes = Int(max(0, seconds)) / 60
         let seconds = Int(max(0, seconds)) % 60
         return String(format: "%d:%02d", minutes, seconds)

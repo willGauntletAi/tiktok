@@ -8,6 +8,7 @@ struct CreateWorkoutPlanView: View {
     @FocusState private var focusedField: Field?
     @Environment(\.presentationMode) var presentationMode
     @State private var showVideoEditor = false
+    @EnvironmentObject private var navigator: Navigator
 
     enum Field {
         case title
@@ -130,7 +131,7 @@ struct CreateWorkoutPlanView: View {
                                 Text("Week \(week)")
                                     .font(.headline)
                                     .padding(.horizontal)
-                                
+
                                 ForEach(
                                     groupedWorkouts[week]?.sorted(by: {
                                         $0.workoutWithMeta.dayOfWeek < $1.workoutWithMeta.dayOfWeek
@@ -207,79 +208,80 @@ struct CreateWorkoutPlanView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    videoSelectionSection()
-                    workoutDetailsSection()
-                    targetMusclesSection()
-                    workoutsSection()
-                    saveButton()
-                }
-                .padding(.vertical)
+        ScrollView {
+            VStack(spacing: 20) {
+                videoSelectionSection()
+                workoutDetailsSection()
+                targetMusclesSection()
+                workoutsSection()
+                saveButton()
             }
-            .background(
-                Color(.systemBackground)
-                    .onTapGesture {
-                        focusedField = nil
+            .padding(.vertical)
+        }
+        .background(
+            Color(.systemBackground)
+                .onTapGesture {
+                    focusedField = nil
+                }
+        )
+        .navigationTitle("Create Workout Plan")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            viewModel.navigator = navigator
+        }
+        .sheet(isPresented: $showVideoEditor) {
+            VideoEditView { url in
+                Task {
+                    let data = try? Data(contentsOf: url)
+                    if let data = data {
+                        await viewModel.processVideoData(data)
                     }
-            )
-            .navigationTitle("Create Workout Plan")
-            .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $showVideoEditor) {
-                VideoEditView { url in
-                    Task {
-                        let data = try? Data(contentsOf: url)
-                        if let data = data {
-                            await viewModel.processVideoData(data)
-                        }
-                        try? FileManager.default.removeItem(at: url)
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+        }
+        .sheet(isPresented: $viewModel.showWorkoutSelector) {
+            NavigationStack {
+                FindVideoView<Workout>(
+                    type: "Workout",
+                    title: "Select Workouts",
+                    onItemSelected: { workout in
+                        viewModel.addWorkout(workout)
+                    },
+                    selectedIds: Set(viewModel.selectedWorkouts.map { $0.workoutWithMeta.workout.id }),
+                    actionButtonTitle: { id in
+                        viewModel.selectedWorkouts.contains { $0.workoutWithMeta.workout.id == id }
+                            ? "Add Again" : "Add"
                     }
-                }
+                )
             }
-            .sheet(isPresented: $viewModel.showWorkoutSelector) {
-                NavigationStack {
-                    FindVideoView<Workout>(
-                        type: "Workout",
-                        title: "Select Workouts",
-                        onItemSelected: { workout in
-                            viewModel.addWorkout(workout)
-                        },
-                        selectedIds: Set(viewModel.selectedWorkouts.map { $0.workoutWithMeta.workout.id }),
-                        actionButtonTitle: { id in
-                            viewModel.selectedWorkouts.contains { $0.workoutWithMeta.workout.id == id }
-                                ? "Add Again" : "Add"
-                        }
-                    )
-                }
+        }
+        .sheet(isPresented: $viewModel.showScheduleEditor) {
+            if let workoutId = viewModel.editingWorkoutId,
+               let workoutInstance = viewModel.selectedWorkouts.first(where: { $0.id == workoutId })
+            {
+                WorkoutScheduleDialog(
+                    workout: workoutInstance.workoutWithMeta.workout,
+                    initialWeek: workoutInstance.workoutWithMeta.weekNumber,
+                    initialDay: workoutInstance.workoutWithMeta.dayOfWeek,
+                    isPresented: $viewModel.showScheduleEditor,
+                    onSchedule: { weekNumber, dayOfWeek in
+                        viewModel.updateWorkoutSchedule(
+                            workoutId: workoutId,
+                            weekNumber: weekNumber,
+                            dayOfWeek: dayOfWeek
+                        )
+                    }
+                )
             }
-            .sheet(isPresented: $viewModel.showScheduleEditor) {
-                if let workoutId = viewModel.editingWorkoutId,
-                   let workoutInstance = viewModel.selectedWorkouts.first(where: { $0.id == workoutId })
-                {
-                    WorkoutScheduleDialog(
-                        workout: workoutInstance.workoutWithMeta.workout,
-                        initialWeek: workoutInstance.workoutWithMeta.weekNumber,
-                        initialDay: workoutInstance.workoutWithMeta.dayOfWeek,
-                        isPresented: $viewModel.showScheduleEditor,
-                        onSchedule: { weekNumber, dayOfWeek in
-                            viewModel.updateWorkoutSchedule(
-                                workoutId: workoutId,
-                                weekNumber: weekNumber,
-                                dayOfWeek: dayOfWeek
-                            )
-                        }
-                    )
-                }
+        }
+        .alert("Error", isPresented: .constant(viewModel.errorMessage != nil)) {
+            Button("OK", role: .cancel) {
+                viewModel.errorMessage = nil
             }
-            .alert("Error", isPresented: .constant(viewModel.errorMessage != nil)) {
-                Button("OK", role: .cancel) {
-                    viewModel.errorMessage = nil
-                }
-            } message: {
-                if let error = viewModel.errorMessage {
-                    Text(error)
-                }
+        } message: {
+            if let error = viewModel.errorMessage {
+                Text(error)
             }
         }
     }

@@ -50,6 +50,7 @@ struct CreateExerciseView: View {
     @State private var selectedVideoForEdit: PhotosPickerItem?
     @FocusState private var focusedField: Field?
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var navigator: Navigator
 
     enum Field {
         case title
@@ -65,138 +66,139 @@ struct CreateExerciseView: View {
     ]
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    GroupBox(label: Text("Video").bold()) {
-                        VStack {
-                            if viewModel.isUploading {
-                                ProgressView("Uploading video...")
-                                    .progressViewStyle(CircularProgressViewStyle())
-                            } else if let thumbnail = viewModel.videoThumbnail {
-                                Image(uiImage: thumbnail)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 200)
-                                    .clipped()
-                            } else {
-                                Button(action: { showVideoEditor = true }) {
-                                    VStack {
-                                        Image(systemName: "video.badge.plus")
-                                            .font(.system(size: 40))
-                                        Text("Add Video")
-                                            .font(.headline)
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 200)
-                                    .background(Color.gray.opacity(0.1))
-                                    .cornerRadius(12)
-                                }
-                            }
-
-                            if viewModel.videoThumbnail != nil {
-                                Button(action: { showVideoEditor = true }) {
-                                    Text("Change Video")
-                                        .foregroundColor(.blue)
-                                }
-                                .padding(.top, 8)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-
-                    GroupBox(label: Text("Details").bold()) {
-                        VStack(spacing: 12) {
-                            TextField("Title", text: $viewModel.exercise.title)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .focused($focusedField, equals: .title)
-
-                            TextField("Description", text: $viewModel.exercise.description, axis: .vertical)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .lineLimit(3 ... 6)
-                                .focused($focusedField, equals: .description)
-
-                            Picker("Difficulty", selection: $viewModel.exercise.difficulty) {
-                                ForEach(Difficulty.allCases, id: \.self) { difficulty in
-                                    Text(difficulty.rawValue.capitalized)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-
-                    GroupBox(label: Text("Target Muscles").bold()) {
-                        Button(action: { showingMuscleSelector = true }) {
-                            HStack {
-                                Text("Select Muscles")
-                                Spacer()
-                                Text("\(viewModel.exercise.targetMuscles.count) selected")
-                                    .foregroundColor(.gray)
-                            }
-                            .padding(.vertical, 8)
-                        }
-                    }
-                    .padding(.horizontal)
-
-                    GroupBox(label: Text("Exercise Specifics").bold()) {
-                        VStack(spacing: 12) {
-                            HStack {
-                                Text("Duration")
-                                Spacer()
-                                TextField("Seconds", value: $viewModel.exercise.duration, format: .number)
-                                    .keyboardType(.numberPad)
-                                    .multilineTextAlignment(.trailing)
-                                    .frame(width: 100)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .focused($focusedField, equals: .duration)
-                            }
-
-                            HStack {
-                                Text("Sets")
-                                Spacer()
-                                TextField("Optional", value: $viewModel.exercise.sets, format: .number)
-                                    .keyboardType(.numberPad)
-                                    .multilineTextAlignment(.trailing)
-                                    .frame(width: 100)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .focused($focusedField, equals: .sets)
-                            }
-
-                            HStack {
-                                Text("Reps")
-                                Spacer()
-                                TextField("Optional", value: $viewModel.exercise.reps, format: .number)
-                                    .keyboardType(.numberPad)
-                                    .multilineTextAlignment(.trailing)
-                                    .frame(width: 100)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .focused($focusedField, equals: .reps)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-
-                    Button(action: { Task { await viewModel.uploadExercise() } }) {
+        ScrollView {
+            VStack(spacing: 20) {
+                GroupBox(label: Text("Video").bold()) {
+                    VStack {
                         if viewModel.isUploading {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            ProgressView("Uploading video...")
+                                .progressViewStyle(CircularProgressViewStyle())
+                        } else if let thumbnail = viewModel.videoThumbnail {
+                            Image(uiImage: thumbnail)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 200)
+                                .clipped()
                         } else {
-                            Text("Upload Exercise")
+                            Button(action: { showVideoEditor = true }) {
+                                VStack {
+                                    Image(systemName: "video.badge.plus")
+                                        .font(.system(size: 40))
+                                    Text("Add Video")
+                                        .font(.headline)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 200)
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(12)
+                            }
+                        }
+
+                        if viewModel.videoThumbnail != nil {
+                            Button(action: { showVideoEditor = true }) {
+                                Text("Change Video")
+                                    .foregroundColor(.blue)
+                            }
+                            .padding(.top, 8)
                         }
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(viewModel.canUpload ? Color.blue : Color.gray)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-                    .disabled(!viewModel.canUpload || viewModel.isUploading)
-                    .padding(.horizontal)
                 }
-                .padding(.vertical)
+                .padding(.horizontal)
+
+                GroupBox(label: Text("Details").bold()) {
+                    VStack(spacing: 12) {
+                        TextField("Title", text: $viewModel.exercise.title)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .focused($focusedField, equals: .title)
+
+                        TextField("Description", text: $viewModel.exercise.description, axis: .vertical)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .lineLimit(3 ... 6)
+                            .focused($focusedField, equals: .description)
+
+                        Picker("Difficulty", selection: $viewModel.exercise.difficulty) {
+                            ForEach(Difficulty.allCases, id: \.self) { difficulty in
+                                Text(difficulty.rawValue.capitalized)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal)
+
+                GroupBox(label: Text("Target Muscles").bold()) {
+                    Button(action: { showingMuscleSelector = true }) {
+                        HStack {
+                            Text("Select Muscles")
+                            Spacer()
+                            Text("\(viewModel.exercise.targetMuscles.count) selected")
+                                .foregroundColor(.gray)
+                        }
+                        .padding(.vertical, 8)
+                    }
+                }
+                .padding(.horizontal)
+
+                GroupBox(label: Text("Exercise Specifics").bold()) {
+                    VStack(spacing: 12) {
+                        HStack {
+                            Text("Duration")
+                            Spacer()
+                            TextField("Seconds", value: $viewModel.exercise.duration, format: .number)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 100)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .focused($focusedField, equals: .duration)
+                        }
+
+                        HStack {
+                            Text("Sets")
+                            Spacer()
+                            TextField("Optional", value: $viewModel.exercise.sets, format: .number)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 100)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .focused($focusedField, equals: .sets)
+                        }
+
+                        HStack {
+                            Text("Reps")
+                            Spacer()
+                            TextField("Optional", value: $viewModel.exercise.reps, format: .number)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 100)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .focused($focusedField, equals: .reps)
+                        }
+                    }
+                }
+                .padding(.horizontal)
+
+                Button(action: { Task { await viewModel.uploadExercise() } }) {
+                    if viewModel.isUploading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Text("Upload Exercise")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(viewModel.canUpload ? Color.blue : Color.gray)
+                .foregroundColor(.white)
+                .cornerRadius(10)
+                .disabled(!viewModel.canUpload || viewModel.isUploading)
+                .padding(.horizontal)
             }
-            .navigationTitle("Create Exercise")
-            .navigationBarTitleDisplayMode(.inline)
+            .padding(.vertical)
+        }
+        .navigationTitle("Create Exercise")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            viewModel.navigator = navigator
         }
         .sheet(isPresented: $showingMuscleSelector) {
             MuscleSelectorView(

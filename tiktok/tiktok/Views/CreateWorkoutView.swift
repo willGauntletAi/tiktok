@@ -7,6 +7,7 @@ struct CreateWorkoutView: View {
     @FocusState private var focusedField: Field?
     @Environment(\.presentationMode) var presentationMode
     @State private var showVideoEditor = false
+    @EnvironmentObject private var navigator: Navigator
 
     enum Field {
         case title
@@ -178,6 +179,9 @@ struct CreateWorkoutView: View {
         )
         .navigationTitle("Create Workout")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            viewModel.navigator = navigator
+        }
         .sheet(isPresented: $showVideoEditor) {
             VideoEditView { url in
                 Task {

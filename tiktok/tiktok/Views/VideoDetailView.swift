@@ -18,7 +18,7 @@ struct VideoDetailView: View {
         onBack: (() -> Void)? = nil
     ) {
         self.videos = videos
-        self.startIndex = index
+        startIndex = index
         self.showBackButton = showBackButton
         self.onBack = onBack
     }
@@ -30,7 +30,7 @@ struct VideoDetailView: View {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(spacing: 0) {
-                            ForEach(Array(videos.enumerated()), id: \.1.id) { index, video in
+                            ForEach(Array(videos.enumerated()), id: \.1.id) { _, video in
                                 VideoPageView(
                                     video: video,
                                     isPlaying: video.id == playingVideoId
@@ -87,23 +87,23 @@ struct VideoDetailView: View {
 struct VideoPageView: View {
     let video: any VideoContent
     let isPlaying: Bool
-    
+
     @StateObject private var viewModel: VideoDetailViewModel
     @State private var player: AVPlayer?
     @State private var isExpanded = false
     @State private var showComments = false
     @EnvironmentObject private var navigator: Navigator
-    
+
     init(video: any VideoContent, isPlaying: Bool) {
         self.video = video
         self.isPlaying = isPlaying
         _viewModel = StateObject(wrappedValue: VideoDetailViewModel(videoId: video.id))
     }
-    
+
     private var description: String {
         isExpanded ? video.description : (video.description.components(separatedBy: .newlines).first ?? video.description)
     }
-    
+
     var body: some View {
         ZStack {
             // Video Player
@@ -124,25 +124,25 @@ struct VideoPageView: View {
                         player = nil
                     }
             }
-            
+
             // Overlay content
             ZStack {
                 // Right side buttons
                 VStack(spacing: 20) {
                     Spacer()
-                    
+
                     Button(action: { Task { await viewModel.toggleLike() }}) {
                         VStack {
                             Image(systemName: viewModel.isLiked ? "heart.fill" : "heart")
                                 .font(.system(size: 28))
                                 .foregroundColor(viewModel.isLiked ? .red : .white)
-                            
+
                             Text("Like")
                                 .font(.caption)
                                 .foregroundColor(.white)
                         }
                     }
-                    
+
                     Button(action: {
                         navigator.navigate(to: .userProfile(userId: video.instructorId))
                     }) {
@@ -150,26 +150,26 @@ struct VideoPageView: View {
                             Image(systemName: "person.circle.fill")
                                 .font(.system(size: 28))
                                 .foregroundColor(.white)
-                            
+
                             Text("@\(viewModel.instructorName)")
                                 .font(.caption)
                                 .foregroundColor(.white)
                                 .lineLimit(1)
                         }
                     }
-                    
+
                     Button(action: { showComments = true }) {
                         VStack {
                             Image(systemName: "bubble.left")
                                 .font(.system(size: 28))
                                 .foregroundColor(.white)
-                            
+
                             Text("Comments")
                                 .font(.caption)
                                 .foregroundColor(.white)
                         }
                     }
-                    
+
                     if video is Exercise {
                         Button(action: {
                             navigator.navigate(to: .exerciseCompletion(exercise: video as! Exercise))
@@ -178,29 +178,29 @@ struct VideoPageView: View {
                                 Image(systemName: "checkmark.circle")
                                     .font(.system(size: 28))
                                     .foregroundColor(.white)
-                                
+
                                 Text("Complete")
                                     .font(.caption)
                                     .foregroundColor(.white)
                             }
                         }
                     }
-                    
+
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.trailing, 16)
-                
+
                 // Bottom content
                 VStack {
                     Spacer()
-                    
+
                     // Video info
                     VStack(alignment: .leading, spacing: 8) {
                         Text(video.title)
                             .font(.title2)
                             .fontWeight(.bold)
-                        
+
                         Text(description)
                             .lineLimit(isExpanded ? nil : 1)
                             .onTapGesture {
@@ -208,7 +208,7 @@ struct VideoPageView: View {
                                     isExpanded.toggle()
                                 }
                             }
-                        
+
                         if isExpanded {
                             DetailRow(title: "Difficulty", value: video.difficulty.rawValue.capitalized)
                             DetailRow(title: "Target Muscles", value: video.targetMuscles.joined(separator: ", "))
