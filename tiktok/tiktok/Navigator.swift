@@ -47,7 +47,17 @@ enum Destination: Hashable, Identifiable {
 func view(for destination: Destination) -> some View {
     switch destination {
     case let .videoDetail(videos, startIndex):
-        VideoDetailView(videos: videos, startAt: startIndex)
+        VideoDetailView(
+            videos: videos,
+            startAt: startIndex,
+            showBackButton: true,
+            onBack: { @MainActor in
+                print("🎬 Navigator: Popping view after back button tap")
+                withAnimation {
+                    Navigator.shared.pop()
+                }
+            }
+        )
     case let .exerciseCompletion(exercise):
         ExerciseCompletionView(exercise: exercise)
     case let .userProfile(userId):
@@ -57,13 +67,40 @@ func view(for destination: Destination) -> some View {
     case let .videoFeed(videos, startIndex):
         VideoFeedView(initialVideos: videos, startingAt: startIndex)
     case let .exercise(exercise):
-        VideoDetailView(videos: [exercise], startAt: 0)
+        VideoDetailView(
+            videos: [exercise],
+            startAt: 0,
+            showBackButton: true,
+            onBack: { @MainActor in
+                print("🎬 Navigator: Popping view after back button tap")
+                withAnimation {
+                    Navigator.shared.pop()
+                }
+            }
+        )
     case let .workout(workout):
-        VideoDetailView(videos: workout.exercises, startAt: 0)
+        VideoDetailView(
+            videos: workout.exercises,
+            startAt: 0,
+            showBackButton: true,
+            onBack: { @MainActor in
+                print("🎬 Navigator: Popping view after back button tap")
+                withAnimation {
+                    Navigator.shared.pop()
+                }
+            }
+        )
     case let .workoutPlan(plan):
         VideoDetailView(
             videos: plan.workouts.flatMap { $0.workout.exercises },
-            startAt: 0
+            startAt: 0,
+            showBackButton: true,
+            onBack: { @MainActor in
+                print("🎬 Navigator: Popping view after back button tap")
+                withAnimation {
+                    Navigator.shared.pop()
+                }
+            }
         )
     case let .profileVideo(workoutPlan):
         ProfileVideoWrapper(workoutPlan: workoutPlan)
@@ -73,6 +110,8 @@ func view(for destination: Destination) -> some View {
 final class Navigator: ObservableObject {
     @Published var path = NavigationPath()
     @Published var presentedSheet: Destination?
+    
+    static let shared = Navigator()
 
     private func logNavigation(_ message: String) {
         print("🎬 Navigator: \(message)")
@@ -98,9 +137,13 @@ final class Navigator: ObservableObject {
         }
     }
 
+    @MainActor
     func pop() {
-        if !path.isEmpty {
-            path.removeLast()
+        logNavigation("Popping view")
+        withAnimation {
+            if !path.isEmpty {
+                path.removeLast()
+            }
         }
     }
 

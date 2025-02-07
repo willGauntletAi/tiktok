@@ -61,57 +61,39 @@ struct VideoFeedView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            // Main content
-            GeometryReader { geometry in
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(spacing: 0) {
-                        ForEach(videos, id: \.id) { workoutPlan in
-                            VideoDetailView(
-                                videos: workoutPlan.getAllVideos(),
-                                startAt: 0
-                            )
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                            .id(workoutPlan.id)
-                        }
-                    }
-                }
-                .scrollTargetBehavior(.paging)
-                .scrollPosition(id: $currentVideoId)
-                .onChange(of: currentVideoId) { _, newValue in
-                    if let videoId = newValue {
-                        print("🎬 Scrolled to video: \(videoId)")
-                        if let index = videos.firstIndex(where: { $0.id == videoId }),
-                           index >= videos.count - 2
-                        {
-                            // Load more videos when we're close to the end
-                            Task {
-                                await loadMoreVideos()
+        GeometryReader { geometry in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 0) {
+                    ForEach(videos, id: \.id) { workoutPlan in
+                        VideoDetailView(
+                            videos: workoutPlan.getAllVideos(),
+                            startAt: 0,
+                            showBackButton: true,
+                            onBack: {
+                                print("🎬 Back button tapped")
+                                navigator.pop()
                             }
+                        )
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .id(workoutPlan.id)
+                    }
+                }
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $currentVideoId)
+            .onChange(of: currentVideoId) { _, newValue in
+                if let videoId = newValue {
+                    print("🎬 Scrolled to video: \(videoId)")
+                    if let index = videos.firstIndex(where: { $0.id == videoId }),
+                       index >= videos.count - 2
+                    {
+                        // Load more videos when we're close to the end
+                        Task {
+                            await loadMoreVideos()
                         }
                     }
                 }
             }
-            
-            // Back button at the highest level
-            HStack {
-                Button(action: {
-                    print("🎬 Back button tapped")
-                    navigator.pop()
-                }) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 24, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 44, height: 44)
-                        .background(Color.black.opacity(0.6))
-                        .clipShape(Circle())
-                        .shadow(color: .black.opacity(0.2), radius: 4)
-                }
-                Spacer()
-            }
-            .padding(.top, UIApplication.shared.windows.first?.safeAreaInsets.top ?? 44 + 8)
-            .padding(.horizontal, 16)
-            .zIndex(1) // Ensure back button is always on top
         }
         .ignoresSafeArea()
         .navigationBarBackButtonHidden(true)

@@ -99,6 +99,7 @@ struct ProfileView: View {
             }
         }
         .task {
+            print("🎬 ProfileView: Fetching user profile")
             await viewModel.fetchUserProfile()
         }
     }

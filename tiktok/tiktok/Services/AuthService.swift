@@ -12,24 +12,32 @@ class AuthService: ObservableObject {
     static let shared = AuthService()
 
     private init() {
+        print("🔐 AuthService: Initializing")
         Auth.auth().addStateDidChangeListener { [weak self] _, authUser in
+            print("🔐 AuthService: Auth state changed - User: \(authUser?.uid ?? "nil")")
             self?.isAuthenticated = authUser != nil
             if let authUser = authUser {
                 Task {
+                    print("🔐 AuthService: Fetching user data for \(authUser.uid)")
                     try? await self?.fetchUser(authUser: authUser)
                     // Update FCM token when user signs in
                     NotificationManager.shared.updateFCMToken(for: authUser.uid)
                 }
             } else {
+                print("🔐 AuthService: No authenticated user")
                 self?.currentUser = nil
             }
         }
     }
 
     private func fetchUser(authUser: FirebaseAuth.User) async throws {
+        print("🔐 AuthService: Starting user fetch for \(authUser.uid)")
         let snapshot = try await db.collection("users").document(authUser.uid).getDocument()
         if let userData = try? snapshot.data(as: User.self) {
+            print("🔐 AuthService: Successfully fetched user data")
             currentUser = userData
+        } else {
+            print("❌ AuthService: Failed to decode user data")
         }
     }
 
