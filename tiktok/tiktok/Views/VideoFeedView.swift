@@ -27,7 +27,7 @@ struct VideoFeedView: View {
     let initialVideos: [[any VideoContent]]
     let initialIndex: Int
 
-    @State private var currentVideoId: String?
+    @State private var currentIndex: Int?
     @State private var videos: [[any VideoContent]]
     @State private var isLoadingMore = false
     @State private var recommendations: [VideoRecommendation] = []
@@ -40,16 +40,16 @@ struct VideoFeedView: View {
         initialIndex = index
         // Initialize state variables
         _videos = State(initialValue: initialVideos)
-        _currentVideoId = State(initialValue: initialVideos.isEmpty ? nil : initialVideos[index].first?.id)
+        _currentIndex = State(initialValue: initialVideos.isEmpty ? nil : index)
     }
 
     var body: some View {
         GeometryReader { geometry in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(videos.enumerated()), id: \.offset) { index, videoList in
+                    ForEach(0..<videos.count, id: \.self) { index in
                         VideoDetailView(
-                            videos: videoList,
+                            videos: videos[index],
                             startAt: 0,
                             showBackButton: true,
                             onBack: {
@@ -58,23 +58,23 @@ struct VideoFeedView: View {
                             }
                         )
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .id("\(index)-\(videoList.first?.id ?? UUID().uuidString)")
+                        .id(index)
+                        .onAppear {
+                            print("🎬 Video at index \(index) appeared")
+                            if index >= videos.count - 2 {
+                                Task {
+                                    await loadMoreVideos()
+                                }
+                            }
+                        }
                     }
                 }
             }
             .scrollTargetBehavior(.paging)
-            .scrollPosition(id: $currentVideoId)
-            .onChange(of: currentVideoId) { _, newValue in
-                if let videoId = newValue {
-                    print("🎬 Scrolled to video: \(videoId)")
-                    if let index = videos.firstIndex(where: { $0.first?.id == videoId }),
-                       index >= videos.count - 2
-                    {
-                        // Load more videos when we're close to the end
-                        Task {
-                            await loadMoreVideos()
-                        }
-                    }
+            .scrollPosition(id: $currentIndex)
+            .onChange(of: currentIndex) { _, newValue in
+                if let index = newValue {
+                    print("🎬 Scrolled to index: \(index)")
                 }
             }
         }
