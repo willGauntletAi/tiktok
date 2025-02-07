@@ -197,13 +197,6 @@ struct CreateExerciseView: View {
             }
             .navigationTitle("Create Exercise")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
         }
         .sheet(isPresented: $showingMuscleSelector) {
             MuscleSelectorView(
