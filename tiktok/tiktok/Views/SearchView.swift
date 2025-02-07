@@ -18,7 +18,7 @@ struct SearchView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
-                .onChange(of: viewModel.selectedContentType) { _ in
+                .onChange(of: viewModel.selectedContentType) {
                     Task {
                         await viewModel.search()
                     }
@@ -178,8 +178,7 @@ struct ContentCard: View {
                     createdAt: exercise.createdAt,
                     updatedAt: exercise.updatedAt
                 )
-                navigator.navigate(
-                    to: .videoDetail(workoutPlan: workoutPlan, workoutIndex: 0, exerciseIndex: 0))
+                presentVideoFeed([workoutPlan])
             case let .workout(workout):
                 let workoutPlan = WorkoutPlan(
                     id: UUID().uuidString,
@@ -195,11 +194,9 @@ struct ContentCard: View {
                     createdAt: workout.createdAt,
                     updatedAt: workout.updatedAt
                 )
-                navigator.navigate(
-                    to: .videoDetail(workoutPlan: workoutPlan, workoutIndex: 0, exerciseIndex: nil))
+                presentVideoFeed([workoutPlan])
             case let .workoutPlan(plan):
-                navigator.navigate(
-                    to: .videoDetail(workoutPlan: plan, workoutIndex: nil, exerciseIndex: nil))
+                presentVideoFeed([plan])
             }
         }) {
             VStack(alignment: .leading) {
@@ -268,6 +265,10 @@ struct ContentCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PlainButtonStyle())
+    }
+
+    private func presentVideoFeed(_ videos: [WorkoutPlan]) {
+        navigator.navigate(to: .videoFeed(videos: videos, startIndex: 0))
     }
 }
 
