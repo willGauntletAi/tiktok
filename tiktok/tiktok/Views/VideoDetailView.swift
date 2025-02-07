@@ -8,7 +8,7 @@ struct VideoDetailView: View {
     let showBackButton: Bool
     let onBack: (() -> Void)?
 
-    @State private var currentPosition: String?
+    @State private var playingVideoId: String?
     @EnvironmentObject private var navigator: Navigator
 
     init(
@@ -27,19 +27,33 @@ struct VideoDetailView: View {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
                 // Main content
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 0) {
-                        ForEach(Array(videos.enumerated()), id: \.1.id) { index, video in
-                            VideoPageView(video: video)
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 0) {
+                            ForEach(Array(videos.enumerated()), id: \.1.id) { index, video in
+                                VideoPageView(
+                                    video: video,
+                                    isPlaying: video.id == playingVideoId
+                                )
                                 .frame(width: geometry.size.width)
                                 .id(video.id)
+                                .onAppear {
+                                    playingVideoId = video.id
+                                }
+                            }
+                        }
+                    }
+                    .scrollTargetBehavior(.paging)
+                    .onAppear {
+                        let startId = videos[startIndex].id
+                        withAnimation {
+                            proxy.scrollTo(startId, anchor: .center)
+                            playingVideoId = startId
                         }
                     }
                 }
-                .scrollTargetBehavior(.paging)
-                .scrollPosition(id: $currentPosition)
-                .onAppear {
-                    currentPosition = videos[startIndex].id
+                .onDisappear {
+                    playingVideoId = nil
                 }
 
                 // Back button overlay
@@ -72,6 +86,7 @@ struct VideoDetailView: View {
 // Separate view for each video page
 struct VideoPageView: View {
     let video: any VideoContent
+    let isPlaying: Bool
     
     @StateObject private var viewModel: VideoDetailViewModel
     @State private var player: AVPlayer?
@@ -79,8 +94,9 @@ struct VideoPageView: View {
     @State private var showComments = false
     @EnvironmentObject private var navigator: Navigator
     
-    init(video: any VideoContent) {
+    init(video: any VideoContent, isPlaying: Bool) {
         self.video = video
+        self.isPlaying = isPlaying
         _viewModel = StateObject(wrappedValue: VideoDetailViewModel(videoId: video.id))
     }
     
@@ -93,9 +109,15 @@ struct VideoPageView: View {
             // Video Player
             if let videoUrl = URL(string: video.videoUrl) {
                 VideoPlayer(player: player ?? AVPlayer())
-                    .onAppear {
-                        player = AVPlayer(url: videoUrl)
-                        player?.play()
+                    .onChange(of: isPlaying) { _, shouldPlay in
+                        if shouldPlay {
+                            if player == nil {
+                                player = AVPlayer(url: videoUrl)
+                            }
+                            player?.play()
+                        } else {
+                            player?.pause()
+                        }
                     }
                     .onDisappear {
                         player?.pause()
