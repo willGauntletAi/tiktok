@@ -27,7 +27,32 @@ struct VideoTimelineView: View {
                             .fill(Color.black.opacity(0.2))
                             .frame(height: thumbnailHeight)
                         
-                        // Clips thumbnails
+                        // Seek gesture overlay
+                        Rectangle()
+                            .fill(Color.clear)
+                            .frame(height: thumbnailHeight)
+                            .contentShape(Rectangle())
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { value in
+                                        isDragging = true
+                                        let progress = max(0, min(1, value.location.x / geometry.size.width))
+                                        let newPosition = progress * viewModel.totalDuration
+                                        dragPosition = newPosition
+                                        seekToTime(newPosition)
+                                    }
+                                    .onEnded { value in
+                                        let progress = max(0, min(1, value.location.x / geometry.size.width))
+                                        let newPosition = progress * viewModel.totalDuration
+                                        currentPosition = newPosition
+                                        dragPosition = newPosition
+                                        seekToTime(newPosition)
+                                        isDragging = false
+                                    }
+                            )
+                            .allowsHitTesting(true)
+                        
+                        // Clips thumbnails with buttons on top
                         HStack(spacing: 0) {
                             ForEach(Array(viewModel.clips.enumerated()), id: \.element.id) { index, clip in
                                 ZStack(alignment: .trailing) {
@@ -50,6 +75,7 @@ struct VideoTimelineView: View {
                                             .onTapGesture {
                                                 viewModel.selectedClipIndex = index
                                             }
+                                            .allowsHitTesting(false)  // Let seek gesture handle taps
                                     } else {
                                         Rectangle()
                                             .fill(Color.gray.opacity(0.3))
@@ -57,6 +83,7 @@ struct VideoTimelineView: View {
                                                 width: clipWidth(for: clip, in: geometry.size.width),
                                                 height: thumbnailHeight
                                             )
+                                            .allowsHitTesting(false)  // Let seek gesture handle taps
                                     }
 
                                     // Delete button
@@ -70,7 +97,7 @@ struct VideoTimelineView: View {
                                                 .background(Circle().fill(Color.white))
                                                 .padding(4)
                                         }
-                                        .zIndex(2)
+                                        .allowsHitTesting(true)  // Ensure button remains tappable
 
                                         Spacer()
                                     }
@@ -87,7 +114,7 @@ struct VideoTimelineView: View {
                                                 .foregroundColor(.white)
                                         }
                                         .offset(x: swapButtonSize / 2)
-                                        .zIndex(2)
+                                        .allowsHitTesting(true)  // Ensure button remains tappable
                                     }
                                 }
                             }
@@ -100,33 +127,12 @@ struct VideoTimelineView: View {
                             .offset(
                                 x: geometry.size.width
                                     * CGFloat(
-                                        (isDragging ? dragPosition : currentPosition) / viewModel.totalDuration
+                                        (isDragging ? dragPosition : currentPosition) / max(viewModel.totalDuration, 0.001)
                                     ),
                                 y: -10
                             )
                             .shadow(radius: 2)
-                        
-                        // Gesture overlay - place last to capture gestures
-                        Rectangle()
-                            .fill(Color.clear)
-                            .frame(height: thumbnailHeight)
-                            .contentShape(Rectangle())
-                            .gesture(
-                                DragGesture(minimumDistance: 0)
-                                    .onChanged { value in
-                                        isDragging = true
-                                        let progress = max(0, min(1, value.location.x / geometry.size.width))
-                                        dragPosition = progress * viewModel.totalDuration
-                                        debouncedSeek(to: dragPosition)
-                                    }
-                                    .onEnded { value in
-                                        let progress = max(0, min(1, value.location.x / geometry.size.width))
-                                        let time = progress * viewModel.totalDuration
-                                        currentPosition = time
-                                        seekToTime(time)
-                                        isDragging = false
-                                    }
-                            )
+                            .allowsHitTesting(false)  // Don't let indicator block gestures
                     }
                 }
                 .frame(height: thumbnailHeight)
@@ -160,52 +166,31 @@ struct VideoTimelineView: View {
         }
     }
 
-    private func debouncedSeek(to time: Double) {
-        // Cancel existing seek task
-        seekTask?.cancel()
-        seekTask = nil
-
-        // Create new task with shorter delay
-        seekTask = Task { @MainActor in
-            do {
-                try await Task.sleep(nanoseconds: 50_000_000) // 50ms delay
-                if !Task.isCancelled {
-                    seekToTime(time)
-                }
-            } catch {
-                // Task was cancelled
-            }
-        }
-    }
-
-    private func startPositionTimer() {
-        // Create a timer that updates every 1/30th of a second
-        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [self] timer in
-                        
-            Task { @MainActor in
-                guard !isDragging,
-                      let player = viewModel.player else { return }
-
-                currentPosition = player.currentTime().seconds
-            }
-        }
-        
-        // Make sure timer continues to fire when scrolling
-        RunLoop.current.add(timer, forMode: .common)
-    }
-
     private func seekToTime(_ time: Double) {
         guard let player = viewModel.player else { return }
         let targetTime = CMTime(seconds: time, preferredTimescale: 600)
         
         Task {
-            // Seek using more precise tolerances for better accuracy
             await player.seek(
                 to: targetTime,
                 toleranceBefore: .zero,
                 toleranceAfter: .zero
             )
         }
+    }
+
+    private func startPositionTimer() {
+        // Create a timer that updates every 1/30th of a second
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [self] timer in
+            Task { @MainActor in
+                guard !isDragging,
+                      let player = viewModel.player else { return }
+                currentPosition = player.currentTime().seconds
+            }
+        }
+        
+        // Make sure timer continues to fire when scrolling
+        RunLoop.current.add(timer, forMode: .common)
     }
 
     private func clipWidth(for clip: VideoClip, in totalWidth: CGFloat) -> CGFloat {

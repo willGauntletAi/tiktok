@@ -284,13 +284,113 @@ class VideoEditViewModel: ObservableObject {
     }
 
     func deleteClip(at index: Int) {
+        // Remove the clip from the array
         clips.remove(at: index)
+        
+        // Update selected clip index
         if selectedClipIndex == index {
             selectedClipIndex = clips.isEmpty ? nil : min(index, clips.count - 1)
+        } else if let selected = selectedClipIndex, selected > index {
+            selectedClipIndex = selected - 1
         }
-        // Update player with remaining clips
+        
+        // Create new composition with remaining clips
         Task {
-            await setupPlayerWithComposition()
+            // Remove existing time observer before rebuilding
+            if let observer = timeObserver {
+                player?.removeTimeObserver(observer)
+                timeObserver = nil
+            }
+            
+            await MainActor.run {
+                isProcessing = true
+            }
+            
+            do {
+                // Create fresh composition
+                composition = AVMutableComposition()
+                var currentTime = CMTime.zero
+                
+                // Re-add all remaining clips
+                for clip in clips {
+                    // Add video track
+                    let videoTracks = try await clip.asset.loadTracks(withMediaType: .video)
+                    guard let videoTrack = videoTracks.first,
+                          let compositionVideoTrack = composition?.addMutableTrack(
+                            withMediaType: .video,
+                            preferredTrackID: kCMPersistentTrackID_Invalid
+                          ) else { continue }
+                    
+                    let timeRange = CMTimeRange(
+                        start: CMTime(seconds: clip.startTime, preferredTimescale: 600),
+                        duration: CMTime(seconds: clip.endTime - clip.startTime, preferredTimescale: 600)
+                    )
+                    
+                    try compositionVideoTrack.insertTimeRange(
+                        timeRange,
+                        of: videoTrack,
+                        at: currentTime
+                    )
+                    
+                    // Add audio track if available
+                    if let audioTracks = try? await clip.asset.loadTracks(withMediaType: .audio),
+                       let audioTrack = audioTracks.first,
+                       let compositionAudioTrack = composition?.addMutableTrack(
+                        withMediaType: .audio,
+                        preferredTrackID: kCMPersistentTrackID_Invalid
+                       ) {
+                        try compositionAudioTrack.insertTimeRange(
+                            timeRange,
+                            of: audioTrack,
+                            at: currentTime
+                        )
+                    }
+                    
+                    currentTime = currentTime + CMTime(seconds: clip.endTime - clip.startTime, preferredTimescale: 600)
+                }
+                
+                let newDuration = currentTime.seconds
+                
+                // Update total duration and player
+                await MainActor.run {
+                    // Update duration first
+                    totalDuration = newDuration
+                    
+                    // Ensure current position is within valid range
+                    currentPosition = min(currentPosition, newDuration)
+                    if currentPosition >= newDuration {
+                        currentPosition = max(0, newDuration - 0.1)
+                    }
+                    
+                    // Create new player with the updated composition
+                    let playerItem = AVPlayerItem(asset: composition!)
+                    if let player = player {
+                        player.replaceCurrentItem(with: playerItem)
+                    } else {
+                        player = AVPlayer(playerItem: playerItem)
+                    }
+                    
+                    // Setup new time observer
+                    setupTimeObserver()
+                    
+                    // Seek to current position
+                    Task {
+                        await player?.seek(
+                            to: CMTime(seconds: currentPosition, preferredTimescale: 600),
+                            toleranceBefore: .zero,
+                            toleranceAfter: .zero
+                        )
+                        player?.play()
+                    }
+                    
+                    isProcessing = false
+                }
+            } catch {
+                print("Error rebuilding composition after delete: \(error)")
+                await MainActor.run {
+                    isProcessing = false
+                }
+            }
         }
     }
 
