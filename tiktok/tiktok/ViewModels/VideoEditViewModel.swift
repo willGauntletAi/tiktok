@@ -106,6 +106,10 @@ class VideoEditViewModel: ObservableObject {
                 throw VideoError.noVideoTrack
             }
             
+            // Load video properties
+            let naturalSize = try await videoTrack.load(.naturalSize)
+            let transform = try await videoTrack.load(.preferredTransform)
+            
             print("Creating composition video track")
             guard let compositionVideoTrack = composition.addMutableTrack(
                 withMediaType: .video,
@@ -123,6 +127,35 @@ class VideoEditViewModel: ObservableObject {
                 of: videoTrack,
                 at: insertTime
             )
+            
+            // Create or update video composition
+            let videoComposition: AVMutableVideoComposition
+            if let existingVideoComposition = (player?.currentItem?.videoComposition as? AVMutableVideoComposition)?.copy() as? AVMutableVideoComposition {
+                videoComposition = existingVideoComposition
+            } else {
+                videoComposition = AVMutableVideoComposition()
+                videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+                
+                // Set initial render size based on first video
+                let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
+                videoComposition.renderSize = CGSize(
+                    width: isVideoPortrait ? naturalSize.height : naturalSize.width,
+                    height: isVideoPortrait ? naturalSize.width : naturalSize.height
+                )
+            }
+            
+            // Create instruction for the new clip
+            let instruction = AVMutableVideoCompositionInstruction()
+            instruction.timeRange = CMTimeRange(start: insertTime, duration: timeRange.duration)
+            
+            let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionVideoTrack)
+            layerInstruction.setTransform(transform, at: .zero)
+            instruction.layerInstructions = [layerInstruction]
+            
+            // Update instructions
+            var instructions = videoComposition.instructions as? [AVMutableVideoCompositionInstruction] ?? []
+            instructions.append(instruction)
+            videoComposition.instructions = instructions
             
             // Insert audio track if available
             print("Loading audio tracks")
@@ -161,7 +194,23 @@ class VideoEditViewModel: ObservableObject {
                 selectedClipIndex = clips.count - 1
                 totalDuration = composition.duration.seconds
                 print("Total duration updated to: \(totalDuration)")
-                updatePlayer()
+                
+                // Create new player item with the updated composition
+                let playerItem = AVPlayerItem(asset: composition)
+                playerItem.videoComposition = videoComposition
+                
+                if let player = player {
+                    player.replaceCurrentItem(with: playerItem)
+                } else {
+                    player = AVPlayer(playerItem: playerItem)
+                }
+                
+                // Setup time observer if needed
+                if timeObserver == nil {
+                    setupTimeObserver()
+                }
+                
+                player?.play()
             }
             
             print("Successfully completed addClip operation")
@@ -479,10 +528,38 @@ class VideoEditViewModel: ObservableObject {
 
     func splitClip(at time: Double) async {
         print("Starting splitClip operation at time: \(time)")
-        guard !clips.isEmpty else {
-            print("No clips to split")
+        guard !clips.isEmpty,
+              time.isFinite,
+              !time.isNaN,
+              time > 0,
+              let selectedIndex = selectedClipIndex,
+              selectedIndex < clips.count else {
+            print("Invalid split parameters")
             return
         }
+        
+        // Find which clip contains the split point
+        var accumulatedTime = 0.0
+        var clipToSplit: Int?
+        
+        for (index, clip) in clips.enumerated() {
+            let clipEnd = accumulatedTime + (clip.endTime - clip.startTime)
+            if time > accumulatedTime && time < clipEnd {
+                clipToSplit = index
+                break
+            }
+            accumulatedTime = clipEnd
+        }
+        
+        guard let clipIndex = clipToSplit else {
+            print("Split time outside any clip bounds")
+            return
+        }
+        
+        let clip = clips[clipIndex]
+        let relativeTime = time - accumulatedTime
+        
+        print("Splitting clip \(clipIndex) at relative time \(relativeTime)")
         
         await MainActor.run {
             isProcessing = true
@@ -496,73 +573,249 @@ class VideoEditViewModel: ObservableObject {
             }
         }
         
-        guard let composition = composition else {
-            print("No composition available for splitting")
-            return
-        }
-        
-        let splitTime = CMTime(seconds: time, preferredTimescale: 600)
-        let tracks = composition.tracks
-        print("Found \(tracks.count) tracks to split")
-        
         do {
-            // Split each track at the specified time
-            for (index, track) in tracks.enumerated() {
-                print("Processing track \(index + 1) of \(tracks.count)")
-                guard let segment = track.segment(forTrackTime: splitTime) else {
-                    print("No segment found for track \(index + 1)")
-                    continue
+            // Generate thumbnails for both parts
+            let imageGenerator = AVAssetImageGenerator(asset: clip.asset)
+            imageGenerator.appliesPreferredTrackTransform = true
+            imageGenerator.maximumSize = CGSize(width: 200, height: 200)
+            imageGenerator.requestedTimeToleranceBefore = .zero
+            imageGenerator.requestedTimeToleranceAfter = .zero
+            
+            // Calculate asset-relative time for thumbnails
+            let assetStartTime = CMTime(seconds: clip.startTime, preferredTimescale: 600)
+            let assetSplitTime = CMTime(seconds: clip.startTime + relativeTime, preferredTimescale: 600)
+            
+            // Thumbnail for first part (at start of this segment)
+            let firstThumbnailTime = assetStartTime + CMTime(seconds: 0.03, preferredTimescale: 600)
+            let firstImage = try await imageGenerator.image(at: firstThumbnailTime)
+            let firstThumbnail = UIImage(cgImage: firstImage.image)
+            
+            // Thumbnail for second part (at split point plus a small offset)
+            let secondThumbnailTime = assetSplitTime + CMTime(seconds: 0.03, preferredTimescale: 600)
+            let secondImage = try await imageGenerator.image(at: secondThumbnailTime)
+            let secondThumbnail = UIImage(cgImage: secondImage.image)
+            
+            // Create a new composition
+            let newComposition = AVMutableComposition()
+            var currentTime = CMTime.zero
+            
+            // Create video composition
+            let videoComposition = AVMutableVideoComposition()
+            videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+            var instructions: [AVMutableVideoCompositionInstruction] = []
+            
+            // Process each clip
+            for (index, currentClip) in clips.enumerated() {
+                if index == clipIndex {
+                    // Add video track for first part
+                    if let videoTrack = try await currentClip.asset.loadTracks(withMediaType: .video).first {
+                        let naturalSize = try await videoTrack.load(.naturalSize)
+                        let transform = try await videoTrack.load(.preferredTransform)
+                        
+                        // First part: from clip start to split point
+                        let firstVideoTrack = newComposition.addMutableTrack(
+                            withMediaType: .video,
+                            preferredTrackID: kCMPersistentTrackID_Invalid
+                        )
+                        
+                        let firstPartRange = CMTimeRange(
+                            start: CMTime(seconds: currentClip.startTime, preferredTimescale: 600),
+                            end: CMTime(seconds: currentClip.startTime + relativeTime, preferredTimescale: 600)
+                        )
+                        
+                        try firstVideoTrack?.insertTimeRange(
+                            firstPartRange,
+                            of: videoTrack,
+                            at: currentTime
+                        )
+                        
+                        // Create instruction for first part
+                        let firstInstruction = AVMutableVideoCompositionInstruction()
+                        firstInstruction.timeRange = CMTimeRange(start: currentTime, duration: firstPartRange.duration)
+                        
+                        let firstLayerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: firstVideoTrack!)
+                        firstLayerInstruction.setTransform(transform, at: .zero)
+                        firstInstruction.layerInstructions = [firstLayerInstruction]
+                        instructions.append(firstInstruction)
+                        
+                        // Add audio track for first part if available
+                        if let audioTrack = try await currentClip.asset.loadTracks(withMediaType: .audio).first {
+                            let firstAudioTrack = newComposition.addMutableTrack(
+                                withMediaType: .audio,
+                                preferredTrackID: kCMPersistentTrackID_Invalid
+                            )
+                            
+                            try firstAudioTrack?.insertTimeRange(
+                                firstPartRange,
+                                of: audioTrack,
+                                at: currentTime
+                            )
+                        }
+                        
+                        // Update current time after first part
+                        currentTime = currentTime + firstPartRange.duration
+                        
+                        // Second part: from split point to clip end
+                        let secondVideoTrack = newComposition.addMutableTrack(
+                            withMediaType: .video,
+                            preferredTrackID: kCMPersistentTrackID_Invalid
+                        )
+                        
+                        let secondPartRange = CMTimeRange(
+                            start: CMTime(seconds: currentClip.startTime + relativeTime, preferredTimescale: 600),
+                            end: CMTime(seconds: currentClip.endTime, preferredTimescale: 600)
+                        )
+                        
+                        try secondVideoTrack?.insertTimeRange(
+                            secondPartRange,
+                            of: videoTrack,
+                            at: currentTime
+                        )
+                        
+                        // Create instruction for second part
+                        let secondInstruction = AVMutableVideoCompositionInstruction()
+                        secondInstruction.timeRange = CMTimeRange(start: currentTime, duration: secondPartRange.duration)
+                        
+                        let secondLayerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: secondVideoTrack!)
+                        secondLayerInstruction.setTransform(transform, at: .zero)
+                        secondInstruction.layerInstructions = [secondLayerInstruction]
+                        instructions.append(secondInstruction)
+                        
+                        // Add audio track for second part if available
+                        if let audioTrack = try await currentClip.asset.loadTracks(withMediaType: .audio).first {
+                            let secondAudioTrack = newComposition.addMutableTrack(
+                                withMediaType: .audio,
+                                preferredTrackID: kCMPersistentTrackID_Invalid
+                            )
+                            
+                            try secondAudioTrack?.insertTimeRange(
+                                secondPartRange,
+                                of: audioTrack,
+                                at: currentTime
+                            )
+                        }
+                        
+                        // Set video composition render size based on transform
+                        let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
+                        videoComposition.renderSize = CGSize(
+                            width: isVideoPortrait ? naturalSize.height : naturalSize.width,
+                            height: isVideoPortrait ? naturalSize.width : naturalSize.height
+                        )
+                        
+                        // Update current time for the second part
+                        currentTime = currentTime + secondPartRange.duration
+                        
+                        // Update clips array
+                        await MainActor.run {
+                            // Update the original clip with first part
+                            var firstClip = clips[clipIndex]
+                            firstClip.thumbnail = firstThumbnail
+                            firstClip.endTime = firstClip.startTime + relativeTime
+                            clips[clipIndex] = firstClip
+                            
+                            // Create and insert the second part
+                            let secondClip = VideoClip(
+                                asset: currentClip.asset,
+                                startTime: firstClip.endTime,
+                                endTime: currentClip.endTime,
+                                thumbnail: secondThumbnail
+                            )
+                            clips.insert(secondClip, at: clipIndex + 1)
+                        }
+                    }
+                } else {
+                    // For non-split clips, just add them as is
+                    if let videoTrack = try await currentClip.asset.loadTracks(withMediaType: .video).first {
+                        let naturalSize = try await videoTrack.load(.naturalSize)
+                        let transform = try await videoTrack.load(.preferredTransform)
+                        
+                        let compositionVideoTrack = newComposition.addMutableTrack(
+                            withMediaType: .video,
+                            preferredTrackID: kCMPersistentTrackID_Invalid
+                        )
+                        
+                        let clipTimeRange = CMTimeRange(
+                            start: CMTime(seconds: currentClip.startTime, preferredTimescale: 600),
+                            end: CMTime(seconds: currentClip.endTime, preferredTimescale: 600)
+                        )
+                        
+                        try compositionVideoTrack?.insertTimeRange(
+                            clipTimeRange,
+                            of: videoTrack,
+                            at: currentTime
+                        )
+                        
+                        // Create instruction for this clip
+                        let instruction = AVMutableVideoCompositionInstruction()
+                        instruction.timeRange = CMTimeRange(start: currentTime, duration: clipTimeRange.duration)
+                        
+                        let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionVideoTrack!)
+                        layerInstruction.setTransform(transform, at: .zero)
+                        instruction.layerInstructions = [layerInstruction]
+                        instructions.append(instruction)
+                        
+                        // Set video composition render size if not already set
+                        if videoComposition.renderSize == .zero {
+                            let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
+                            videoComposition.renderSize = CGSize(
+                                width: isVideoPortrait ? naturalSize.height : naturalSize.width,
+                                height: isVideoPortrait ? naturalSize.width : naturalSize.height
+                            )
+                        }
+                        
+                        // Add audio if available
+                        if let audioTrack = try await currentClip.asset.loadTracks(withMediaType: .audio).first {
+                            let compositionAudioTrack = newComposition.addMutableTrack(
+                                withMediaType: .audio,
+                                preferredTrackID: kCMPersistentTrackID_Invalid
+                            )
+                            
+                            try compositionAudioTrack?.insertTimeRange(
+                                clipTimeRange,
+                                of: audioTrack,
+                                at: currentTime
+                            )
+                        }
+                        
+                        currentTime = currentTime + clipTimeRange.duration
+                    }
                 }
-                
-                print("Creating new track for split")
-                guard let newTrack = composition.addMutableTrack(
-                    withMediaType: track.mediaType,
-                    preferredTrackID: kCMPersistentTrackID_Invalid
-                ) else {
-                    print("Failed to create new track for split")
-                    continue
-                }
-                
-                let timeMapping = segment.timeMapping
-                
-                print("Moving second part to new track")
-                try newTrack.insertTimeRange(
-                    CMTimeRange(start: splitTime, end: timeMapping.target.end),
-                    of: track,
-                    at: splitTime
-                )
-                
-                print("Trimming original track")
-                track.removeTimeRange(
-                    CMTimeRange(start: splitTime, end: timeMapping.target.end)
-                )
             }
             
-            print("Updating UI after split")
+            // Set instructions on video composition
+            videoComposition.instructions = instructions
+            
+            // Update the composition and player
             await MainActor.run {
-                if let selectedIndex = selectedClipIndex,
-                   selectedIndex < clips.count {
-                    var originalClip = clips[selectedIndex]
-                    let splitDuration = originalClip.endTime - time
-                    
-                    print("Updating original clip duration")
-                    originalClip.endTime = time
-                    clips[selectedIndex] = originalClip
-                    
-                    print("Creating new clip for split part")
-                    let newClip = VideoClip(
-                        asset: originalClip.asset,
-                        startTime: time,
-                        endTime: time + splitDuration,
-                        thumbnail: originalClip.thumbnail
-                    )
-                    
-                    print("Inserting new clip")
-                    clips.insert(newClip, at: selectedIndex + 1)
+                composition = newComposition
+                totalDuration = currentTime.seconds
+                
+                // Create new player item with the updated composition
+                let playerItem = AVPlayerItem(asset: newComposition)
+                playerItem.videoComposition = videoComposition
+                
+                if let player = player {
+                    player.replaceCurrentItem(with: playerItem)
+                } else {
+                    player = AVPlayer(playerItem: playerItem)
                 }
                 
-                updatePlayer()
+                // Setup time observer if needed
+                if timeObserver == nil {
+                    setupTimeObserver()
+                }
+                
+                // Seek to the split point and play
+                Task {
+                    await player?.seek(
+                        to: CMTime(seconds: time, preferredTimescale: 600),
+                        toleranceBefore: .zero,
+                        toleranceAfter: .zero
+                    )
+                    player?.play()
+                }
             }
+            
             print("Successfully completed splitClip operation")
         } catch {
             print("Error in splitClip: \(error.localizedDescription)")

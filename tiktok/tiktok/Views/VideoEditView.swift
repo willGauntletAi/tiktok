@@ -203,8 +203,11 @@ struct VideoTimelineView: View {
     }
 
     private func timeString(from seconds: Double) -> String {
-        let minutes = Int(seconds) / 60
-        let seconds = Int(seconds) % 60
+        guard seconds.isFinite, !seconds.isNaN, seconds >= 0 else {
+            return "0:00"
+        }
+        let minutes = Int(max(0, seconds)) / 60
+        let seconds = Int(max(0, seconds)) % 60
         return String(format: "%d:%02d", minutes, seconds)
     }
 }
