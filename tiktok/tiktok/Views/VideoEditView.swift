@@ -438,6 +438,17 @@ struct VideoEditView: View {
                 }
             }
         }
+        .sheet(isPresented: $showCamera) {
+            CameraView(onVideoRecorded: { url in
+                Task { @MainActor in
+                    do {
+                        try await viewModel.addClip(from: url)
+                    } catch {
+                        print("Error adding recorded clip: \(error.localizedDescription)")
+                    }
+                }
+            })
+        }
     }
 }
 
