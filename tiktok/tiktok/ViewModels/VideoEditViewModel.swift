@@ -99,8 +99,8 @@ class VideoEditViewModel: ObservableObject {
             // First, process all existing clips
             for existingClip in clips {
                 if let videoTrack = try await existingClip.asset.loadTracks(withMediaType: AVMediaType.video).first {
-                    let naturalSize = videoTrack.naturalSize
-                    let transform = videoTrack.preferredTransform
+                    let naturalSize = try await videoTrack.load(.naturalSize)
+                    let transform = try await videoTrack.load(.preferredTransform)
                     let assetDuration = try await existingClip.asset.load(.duration)
 
                     // Add video track
@@ -171,8 +171,8 @@ class VideoEditViewModel: ObservableObject {
             }
 
             // Load video properties
-            let naturalSize = videoTrack.naturalSize
-            let transform = videoTrack.preferredTransform
+            let naturalSize = try await videoTrack.load(.naturalSize)
+            let transform = try await videoTrack.load(.preferredTransform)
             let assetDuration = try await asset.load(.duration)
 
             // Add video track for new clip
@@ -522,8 +522,8 @@ class VideoEditViewModel: ObservableObject {
         // Process each clip to create video composition instructions
         for clip in clips {
             if let videoTrack = try await clip.asset.loadTracks(withMediaType: AVMediaType.video).first {
-                let naturalSize = videoTrack.naturalSize
-                let transform = videoTrack.preferredTransform
+                let naturalSize = try await videoTrack.load(.naturalSize)
+                let transform = try await videoTrack.load(.preferredTransform)
 
                 // Set video composition render size if not already set
                 if videoComposition.renderSize == .zero {
@@ -621,8 +621,8 @@ class VideoEditViewModel: ObservableObject {
                 print("Clip \(index) asset start time: \(clip.assetStartTime), duration: \(clip.assetDuration)")
                 
                 if let videoTrack = try await clip.asset.loadTracks(withMediaType: AVMediaType.video).first {
-                    let naturalSize = videoTrack.naturalSize
-                    let transform = videoTrack.preferredTransform
+                    let naturalSize = try await videoTrack.load(.naturalSize)
+                    let transform = try await videoTrack.load(.preferredTransform)
                     let assetDuration = try await clip.asset.load(.duration)
                     
                     print("Clip \(index) full asset duration: \(assetDuration.seconds)")
@@ -778,12 +778,9 @@ class VideoEditViewModel: ObservableObject {
 
     func splitClip(at time: Double) async {
         print("Starting splitClip operation at time: \(time)")
-        guard !clips.isEmpty,
-              time.isFinite,
-              !time.isNaN,
-              time > 0,
-              let composition = composition
-        else {
+        if ( clips.isEmpty ||
+              !time.isFinite ||
+             time.isNaN) {
             print("Invalid split parameters")
             return
         }
@@ -806,7 +803,6 @@ class VideoEditViewModel: ObservableObject {
             return
         }
 
-        let clip = clips[clipIndex]
         let relativeTime = time - accumulatedTime
         print("Splitting clip \(clipIndex) at relative time \(relativeTime)")
 
@@ -866,14 +862,15 @@ class VideoEditViewModel: ObservableObject {
                     )
 
                     let firstLayerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: firstVideoTrack!)
-                    firstLayerInstruction.setTransform(videoTrack.preferredTransform, at: .zero)
+                    let transform = try await videoTrack.load(.preferredTransform)
+                    firstLayerInstruction.setTransform(transform, at: .zero)
                     firstInstruction.layerInstructions = [firstLayerInstruction]
                     instructions.append(firstInstruction)
 
                     // Set video composition render size if not already set
                     if videoComposition.renderSize == .zero {
-                        let naturalSize = videoTrack.naturalSize
-                        let isVideoPortrait = videoTrack.preferredTransform.a == 0 && abs(videoTrack.preferredTransform.b) == 1
+                        let naturalSize = try await videoTrack.load(.naturalSize)
+                        let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
                         videoComposition.renderSize = CGSize(
                             width: isVideoPortrait ? naturalSize.height : naturalSize.width,
                             height: isVideoPortrait ? naturalSize.width : naturalSize.height
@@ -921,7 +918,7 @@ class VideoEditViewModel: ObservableObject {
                     )
 
                     let secondLayerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: secondVideoTrack!)
-                    secondLayerInstruction.setTransform(videoTrack.preferredTransform, at: .zero)
+                    secondLayerInstruction.setTransform(transform, at: .zero)
                     secondInstruction.layerInstructions = [secondLayerInstruction]
                     instructions.append(secondInstruction)
 
@@ -1004,14 +1001,15 @@ class VideoEditViewModel: ObservableObject {
                     instruction.timeRange = CMTimeRange(start: currentTime, duration: clipTimeRange.duration)
 
                     let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionVideoTrack!)
-                    layerInstruction.setTransform(videoTrack.preferredTransform, at: .zero)
+                    let transform = try await videoTrack.load(.preferredTransform)
+                    layerInstruction.setTransform(transform, at: .zero)
                     instruction.layerInstructions = [layerInstruction]
                     instructions.append(instruction)
 
                     // Set video composition render size if not already set
                     if videoComposition.renderSize == .zero {
-                        let naturalSize = videoTrack.naturalSize
-                        let isVideoPortrait = videoTrack.preferredTransform.a == 0 && abs(videoTrack.preferredTransform.b) == 1
+                        let naturalSize = try await videoTrack.load(.naturalSize)
+                        let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
                         videoComposition.renderSize = CGSize(
                             width: isVideoPortrait ? naturalSize.height : naturalSize.width,
                             height: isVideoPortrait ? naturalSize.width : naturalSize.height
@@ -1079,8 +1077,8 @@ class VideoEditViewModel: ObservableObject {
 
     // Fix unused naturalSize warning
     private func configureVideoComposition(_ videoComposition: AVMutableVideoComposition, with videoTrack: AVAssetTrack) async throws {
-        let size = videoTrack.naturalSize
-        let transform = videoTrack.preferredTransform
+        let size = try await videoTrack.load(.naturalSize)
+        let transform = try await videoTrack.load(.preferredTransform)
 
         let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
         let renderWidth = isVideoPortrait ? size.height : size.width
