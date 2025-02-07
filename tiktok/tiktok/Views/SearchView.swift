@@ -143,61 +143,19 @@ struct ContentCard: View {
 
     var body: some View {
         Button(action: {
+            let videos: [any VideoContent]
             switch destination {
             case let .exercise(exercise):
-                let workoutPlan = WorkoutPlan(
-                    id: UUID().uuidString,
-                    title: exercise.title,
-                    description: exercise.description,
-                    instructorId: exercise.instructorId,
-                    videoUrl: exercise.videoUrl,
-                    thumbnailUrl: exercise.thumbnailUrl,
-                    difficulty: exercise.difficulty,
-                    targetMuscles: exercise.targetMuscles,
-                    workouts: [
-                        WorkoutWithMetadata(
-                            workout: Workout(
-                                id: UUID().uuidString,
-                                title: exercise.title,
-                                description: exercise.description,
-                                exercises: [exercise],
-                                instructorId: exercise.instructorId,
-                                videoUrl: exercise.videoUrl,
-                                thumbnailUrl: exercise.thumbnailUrl,
-                                difficulty: exercise.difficulty,
-                                targetMuscles: exercise.targetMuscles,
-                                totalDuration: exercise.duration,
-                                createdAt: exercise.createdAt,
-                                updatedAt: exercise.updatedAt
-                            ),
-                            weekNumber: 1,
-                            dayOfWeek: 1
-                        ),
-                    ],
-                    duration: 1,
-                    createdAt: exercise.createdAt,
-                    updatedAt: exercise.updatedAt
-                )
-                presentVideoFeed([workoutPlan])
+                // Just the single exercise
+                videos = [exercise]
             case let .workout(workout):
-                let workoutPlan = WorkoutPlan(
-                    id: UUID().uuidString,
-                    title: workout.title,
-                    description: workout.description,
-                    instructorId: workout.instructorId,
-                    videoUrl: workout.videoUrl,
-                    thumbnailUrl: workout.thumbnailUrl,
-                    difficulty: workout.difficulty,
-                    targetMuscles: workout.targetMuscles,
-                    workouts: [WorkoutWithMetadata(workout: workout, weekNumber: 1, dayOfWeek: 1)],
-                    duration: 1,
-                    createdAt: workout.createdAt,
-                    updatedAt: workout.updatedAt
-                )
-                presentVideoFeed([workoutPlan])
+                // Workout followed by its exercises
+                videos = [workout] + workout.exercises
             case let .workoutPlan(plan):
-                presentVideoFeed([plan])
+                // Plan, followed by workouts, followed by exercises
+                videos = [plan] + plan.workouts.map(\.workout) + plan.workouts.flatMap(\.workout.exercises)
             }
+            navigator.navigate(to: .videoDetail(videos: videos, startIndex: 0))
         }) {
             VStack(alignment: .leading) {
                 AsyncImage(url: URL(string: thumbnailUrl)) { image in
@@ -265,10 +223,6 @@ struct ContentCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PlainButtonStyle())
-    }
-
-    private func presentVideoFeed(_ videos: [WorkoutPlan]) {
-        navigator.navigate(to: .videoFeed(videos: videos, startIndex: 0))
     }
 }
 

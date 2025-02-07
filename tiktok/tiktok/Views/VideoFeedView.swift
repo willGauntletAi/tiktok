@@ -1,21 +1,42 @@
 import AVKit
 import SwiftUI
 
+// Helper function moved to top level for reuse
+private func getAllVideos(from workoutPlan: WorkoutPlan) -> [any VideoContent] {
+    var allVideos: [any VideoContent] = []
+    
+    // Add the workout plan itself as it contains a video
+    allVideos.append(workoutPlan)
+    
+    // Add each workout and its exercises
+    for workoutMeta in workoutPlan.workouts {
+        // Add the workout itself as it contains a video
+        allVideos.append(workoutMeta.workout)
+        // Add all exercises from the workout
+        allVideos.append(contentsOf: workoutMeta.workout.exercises)
+    }
+    
+    return allVideos
+}
+
 struct ProfileVideoWrapper: View {
     let workoutPlan: WorkoutPlan
     @EnvironmentObject private var navigator: Navigator
 
     var body: some View {
-        VideoDetailView(workoutPlan: workoutPlan)
-            .gesture(
-                DragGesture()
-                    .onEnded { value in
-                        if value.translation.width > 100 {
-                            print("🎬 Left swipe detected, popping navigation")
-                            navigator.pop()
-                        }
+        VideoDetailView(
+            videos: workoutPlan.getAllVideos(),
+            startAt: 0
+        )
+        .gesture(
+            DragGesture()
+                .onEnded { value in
+                    if value.translation.width > 100 {
+                        print("🎬 Left swipe detected, popping navigation")
+                        navigator.pop()
                     }
-            )
+                }
+        )
     }
 }
 
@@ -40,35 +61,60 @@ struct VideoFeedView: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 0) {
-                    ForEach(videos, id: \.id) { video in
-                        VideoDetailView(workoutPlan: video)
+        ZStack(alignment: .top) {
+            // Main content
+            GeometryReader { geometry in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(spacing: 0) {
+                        ForEach(videos, id: \.id) { workoutPlan in
+                            VideoDetailView(
+                                videos: workoutPlan.getAllVideos(),
+                                startAt: 0
+                            )
                             .frame(width: geometry.size.width, height: geometry.size.height)
-                            .id(video.id)
+                            .id(workoutPlan.id)
+                        }
                     }
                 }
-            }
-            .scrollTargetBehavior(.paging)
-            .scrollPosition(id: $currentVideoId)
-            .onChange(of: currentVideoId) { _, newValue in
-                if let videoId = newValue {
-                    print("🎬 Scrolled to video: \(videoId)")
-                    if let index = videos.firstIndex(where: { $0.id == videoId }),
-                       index >= videos.count - 2
-                    {
-                        // Load more videos when we're close to the end
-                        Task {
-                            await loadMoreVideos()
+                .scrollTargetBehavior(.paging)
+                .scrollPosition(id: $currentVideoId)
+                .onChange(of: currentVideoId) { _, newValue in
+                    if let videoId = newValue {
+                        print("🎬 Scrolled to video: \(videoId)")
+                        if let index = videos.firstIndex(where: { $0.id == videoId }),
+                           index >= videos.count - 2
+                        {
+                            // Load more videos when we're close to the end
+                            Task {
+                                await loadMoreVideos()
+                            }
                         }
                     }
                 }
             }
+            
+            // Back button at the highest level
+            HStack {
+                Button(action: {
+                    print("🎬 Back button tapped")
+                    navigator.pop()
+                }) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(Circle())
+                        .shadow(color: .black.opacity(0.2), radius: 4)
+                }
+                Spacer()
+            }
+            .padding(.top, UIApplication.shared.windows.first?.safeAreaInsets.top ?? 44 + 8)
+            .padding(.horizontal, 16)
+            .zIndex(1) // Ensure back button is always on top
         }
         .ignoresSafeArea()
         .navigationBarBackButtonHidden(true)
-        .toolbar(.hidden, for: .navigationBar)
         .gesture(
             DragGesture()
                 .onEnded { value in

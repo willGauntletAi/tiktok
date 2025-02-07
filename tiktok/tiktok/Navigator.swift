@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum Destination: Hashable, Identifiable {
-    case videoDetail(workoutPlan: WorkoutPlan, workoutIndex: Int?, exerciseIndex: Int?)
+    case videoDetail(videos: [any VideoContent], startIndex: Int)
     case exerciseCompletion(exercise: Exercise)
     case userProfile(userId: String)
     case profile
@@ -13,8 +13,8 @@ enum Destination: Hashable, Identifiable {
 
     var id: String {
         switch self {
-        case let .videoDetail(workoutPlan, _, _):
-            return "videoDetail-\(workoutPlan.id)"
+        case let .videoDetail(videos, startIndex):
+            return "videoDetail-\(videos[startIndex].id)"
         case let .exerciseCompletion(exercise):
             return "exerciseCompletion-\(exercise.id)"
         case let .userProfile(userId):
@@ -33,15 +33,21 @@ enum Destination: Hashable, Identifiable {
             return "profileVideo-\(workoutPlan.id)"
         }
     }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+    
+    static func == (lhs: Destination, rhs: Destination) -> Bool {
+        lhs.id == rhs.id
+    }
 }
 
 @ViewBuilder
 func view(for destination: Destination) -> some View {
     switch destination {
-    case let .videoDetail(workoutPlan, workoutIndex, exerciseIndex):
-        VideoDetailView(
-            workoutPlan: workoutPlan, workoutIndex: workoutIndex, exerciseIndex: exerciseIndex
-        )
+    case let .videoDetail(videos, startIndex):
+        VideoDetailView(videos: videos, startAt: startIndex)
     case let .exerciseCompletion(exercise):
         ExerciseCompletionView(exercise: exercise)
     case let .userProfile(userId):
@@ -51,60 +57,14 @@ func view(for destination: Destination) -> some View {
     case let .videoFeed(videos, startIndex):
         VideoFeedView(initialVideos: videos, startingAt: startIndex)
     case let .exercise(exercise):
-        // Convert exercise to video detail
-        let workoutPlan = WorkoutPlan(
-            id: UUID().uuidString,
-            title: exercise.title,
-            description: exercise.description,
-            instructorId: exercise.instructorId,
-            videoUrl: exercise.videoUrl,
-            thumbnailUrl: exercise.thumbnailUrl,
-            difficulty: exercise.difficulty,
-            targetMuscles: exercise.targetMuscles,
-            workouts: [
-                WorkoutWithMetadata(
-                    workout: Workout(
-                        id: UUID().uuidString,
-                        title: exercise.title,
-                        description: exercise.description,
-                        exercises: [exercise],
-                        instructorId: exercise.instructorId,
-                        videoUrl: exercise.videoUrl,
-                        thumbnailUrl: exercise.thumbnailUrl,
-                        difficulty: exercise.difficulty,
-                        targetMuscles: exercise.targetMuscles,
-                        totalDuration: exercise.duration,
-                        createdAt: exercise.createdAt,
-                        updatedAt: exercise.updatedAt
-                    ),
-                    weekNumber: 1,
-                    dayOfWeek: 1
-                )
-            ],
-            duration: 1,
-            createdAt: exercise.createdAt,
-            updatedAt: exercise.updatedAt
-        )
-        VideoDetailView(workoutPlan: workoutPlan, workoutIndex: 0, exerciseIndex: 0)
+        VideoDetailView(videos: [exercise], startAt: 0)
     case let .workout(workout):
-        // Convert workout to video detail
-        let workoutPlan = WorkoutPlan(
-            id: UUID().uuidString,
-            title: workout.title,
-            description: workout.description,
-            instructorId: workout.instructorId,
-            videoUrl: workout.videoUrl,
-            thumbnailUrl: workout.thumbnailUrl,
-            difficulty: workout.difficulty,
-            targetMuscles: workout.targetMuscles,
-            workouts: [WorkoutWithMetadata(workout: workout, weekNumber: 1, dayOfWeek: 1)],
-            duration: 1,
-            createdAt: workout.createdAt,
-            updatedAt: workout.updatedAt
-        )
-        VideoDetailView(workoutPlan: workoutPlan, workoutIndex: 0, exerciseIndex: nil)
+        VideoDetailView(videos: workout.exercises, startAt: 0)
     case let .workoutPlan(plan):
-        VideoDetailView(workoutPlan: plan, workoutIndex: nil, exerciseIndex: nil)
+        VideoDetailView(
+            videos: plan.workouts.flatMap { $0.workout.exercises },
+            startAt: 0
+        )
     case let .profileVideo(workoutPlan):
         ProfileVideoWrapper(workoutPlan: workoutPlan)
     }
@@ -127,6 +87,14 @@ final class Navigator: ObservableObject {
             path.append(destination)
         case .exerciseCompletion:
             presentedSheet = destination
+        }
+    }
+
+    func replace(with destination: Destination) {
+        logNavigation("Replacing current view with \(destination.id)")
+        if !path.isEmpty {
+            path.removeLast()
+            path.append(destination)
         }
     }
 

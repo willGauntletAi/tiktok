@@ -162,4 +162,21 @@ struct WorkoutPlan: VideoContent {
             updatedAt: Date()
         )
     }
+
+    func getAllVideos() -> [any VideoContent] {
+        var allVideos: [any VideoContent] = []
+        
+        // Add the workout plan itself as it contains a video
+        allVideos.append(self)
+        
+        // Add each workout and its exercises
+        for workoutMeta in workouts {
+            // Add the workout itself as it contains a video
+            allVideos.append(workoutMeta.workout)
+            // Add all exercises from the workout
+            allVideos.append(contentsOf: workoutMeta.workout.exercises)
+        }
+        
+        return allVideos
+    }
 }

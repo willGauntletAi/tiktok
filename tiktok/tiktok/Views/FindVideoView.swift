@@ -187,41 +187,8 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
             }
             .navigationDestination(for: T.self) { item in
                 VideoDetailView(
-                    workoutPlan: WorkoutPlan(
-                        id: UUID().uuidString,
-                        title: item.title,
-                        description: item.description,
-                        instructorId: item.instructorId,
-                        videoUrl: item.videoUrl,
-                        thumbnailUrl: item.thumbnailUrl,
-                        difficulty: item.difficulty,
-                        targetMuscles: item.targetMuscles,
-                        workouts: [
-                            WorkoutWithMetadata(
-                                workout: Workout(
-                                    id: UUID().uuidString,
-                                    title: item.title,
-                                    description: item.description,
-                                    exercises: type == "exercise" ? [item as! Exercise] : [],
-                                    instructorId: item.instructorId,
-                                    videoUrl: item.videoUrl,
-                                    thumbnailUrl: item.thumbnailUrl,
-                                    difficulty: item.difficulty,
-                                    targetMuscles: item.targetMuscles,
-                                    totalDuration: (item as? Exercise)?.duration ?? 0,
-                                    createdAt: item.createdAt,
-                                    updatedAt: item.updatedAt
-                                ),
-                                weekNumber: 1,
-                                dayOfWeek: 1
-                            ),
-                        ],
-                        duration: 1,
-                        createdAt: item.createdAt,
-                        updatedAt: item.updatedAt
-                    ),
-                    workoutIndex: 0,
-                    exerciseIndex: type == "exercise" ? 0 : nil
+                    videos: [item],
+                    startAt: 0
                 )
             }
         }

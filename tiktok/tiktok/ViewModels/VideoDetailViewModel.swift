@@ -10,16 +10,27 @@ class VideoDetailViewModel: ObservableObject {
     @Published var instructorName: String = ""
 
     private let db = Firestore.firestore()
-    let videoId: String
+    private(set) var videoId: String
     private var likeDocument: DocumentReference?
     private let auth = Auth.auth()
 
     init(videoId: String) {
         self.videoId = videoId
         Task {
-            await checkIfLiked()
-            await fetchInstructorName()
+            await refreshVideo()
         }
+    }
+    
+    func updateVideoId(_ newId: String) {
+        videoId = newId
+        Task {
+            await refreshVideo()
+        }
+    }
+    
+    private func refreshVideo() async {
+        await checkIfLiked()
+        await fetchInstructorName()
     }
 
     private func fetchInstructorName() async {
