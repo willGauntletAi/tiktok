@@ -98,14 +98,14 @@ class VideoEditViewModel: ObservableObject {
 
             // First, process all existing clips
             for existingClip in clips {
-                if let videoTrack = try await existingClip.asset.loadTracks(withMediaType: .video).first {
-                    let naturalSize = try await videoTrack.load(.naturalSize)
-                    let transform = try await videoTrack.load(.preferredTransform)
+                if let videoTrack = try await existingClip.asset.loadTracks(withMediaType: AVMediaType.video).first {
+                    let naturalSize = videoTrack.naturalSize
+                    let transform = videoTrack.preferredTransform
                     let assetDuration = try await existingClip.asset.load(.duration)
 
                     // Add video track
                     let compositionVideoTrack = newComposition.addMutableTrack(
-                        withMediaType: .video,
+                        withMediaType: AVMediaType.video,
                         preferredTrackID: kCMPersistentTrackID_Invalid
                     )
 
@@ -146,9 +146,9 @@ class VideoEditViewModel: ObservableObject {
                     }
 
                     // Add audio if available
-                    if let audioTrack = try await existingClip.asset.loadTracks(withMediaType: .audio).first {
+                    if let audioTrack = try await existingClip.asset.loadTracks(withMediaType: AVMediaType.audio).first {
                         let compositionAudioTrack = newComposition.addMutableTrack(
-                            withMediaType: .audio,
+                            withMediaType: AVMediaType.audio,
                             preferredTrackID: kCMPersistentTrackID_Invalid
                         )
 
@@ -164,20 +164,20 @@ class VideoEditViewModel: ObservableObject {
             }
 
             // Now add the new clip
-            let videoTracks = try await asset.loadTracks(withMediaType: .video)
+            let videoTracks = try await asset.loadTracks(withMediaType: AVMediaType.video)
             guard let videoTrack = videoTracks.first else {
                 print("No video track found")
                 throw VideoError.noVideoTrack
             }
 
             // Load video properties
-            let naturalSize = try await videoTrack.load(.naturalSize)
-            let transform = try await videoTrack.load(.preferredTransform)
+            let naturalSize = videoTrack.naturalSize
+            let transform = videoTrack.preferredTransform
             let assetDuration = try await asset.load(.duration)
 
             // Add video track for new clip
             let compositionVideoTrack = newComposition.addMutableTrack(
-                withMediaType: .video,
+                withMediaType: AVMediaType.video,
                 preferredTrackID: kCMPersistentTrackID_Invalid
             )
 
@@ -205,9 +205,9 @@ class VideoEditViewModel: ObservableObject {
             }
 
             // Add audio track for new clip if available
-            if let audioTrack = try await asset.loadTracks(withMediaType: .audio).first {
+            if let audioTrack = try await asset.loadTracks(withMediaType: AVMediaType.audio).first {
                 let compositionAudioTrack = newComposition.addMutableTrack(
-                    withMediaType: .audio,
+                    withMediaType: AVMediaType.audio,
                     preferredTrackID: kCMPersistentTrackID_Invalid
                 )
 
@@ -226,7 +226,9 @@ class VideoEditViewModel: ObservableObject {
                 asset: asset,
                 startTime: currentTime.seconds,
                 endTime: (currentTime + assetDuration).seconds,
-                thumbnail: thumbnail
+                thumbnail: thumbnail,
+                assetStartTime: 0,
+                assetDuration: assetDuration.seconds
             )
 
             // Update UI
@@ -406,10 +408,10 @@ class VideoEditViewModel: ObservableObject {
                 // Re-add all remaining clips
                 for clip in clips {
                     // Add video track
-                    let videoTracks = try await clip.asset.loadTracks(withMediaType: .video)
+                    let videoTracks = try await clip.asset.loadTracks(withMediaType: AVMediaType.video)
                     guard let videoTrack = videoTracks.first,
                           let compositionVideoTrack = composition?.addMutableTrack(
-                              withMediaType: .video,
+                              withMediaType: AVMediaType.video,
                               preferredTrackID: kCMPersistentTrackID_Invalid
                           ) else { continue }
 
@@ -425,10 +427,10 @@ class VideoEditViewModel: ObservableObject {
                     )
 
                     // Add audio track if available
-                    if let audioTracks = try? await clip.asset.loadTracks(withMediaType: .audio),
+                    if let audioTracks = try? await clip.asset.loadTracks(withMediaType: AVMediaType.audio),
                        let audioTrack = audioTracks.first,
                        let compositionAudioTrack = composition?.addMutableTrack(
-                           withMediaType: .audio,
+                           withMediaType: AVMediaType.audio,
                            preferredTrackID: kCMPersistentTrackID_Invalid
                        )
                     {
@@ -511,6 +513,51 @@ class VideoEditViewModel: ObservableObject {
             throw VideoError.exportSessionCreationFailed
         }
 
+        // Create video composition for export
+        let videoComposition = AVMutableVideoComposition()
+        videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+        var instructions: [AVMutableVideoCompositionInstruction] = []
+        var currentTime = CMTime.zero
+
+        // Process each clip to create video composition instructions
+        for clip in clips {
+            if let videoTrack = try await clip.asset.loadTracks(withMediaType: AVMediaType.video).first {
+                let naturalSize = videoTrack.naturalSize
+                let transform = videoTrack.preferredTransform
+
+                // Set video composition render size if not already set
+                if videoComposition.renderSize == .zero {
+                    let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
+                    videoComposition.renderSize = CGSize(
+                        width: isVideoPortrait ? naturalSize.height : naturalSize.width,
+                        height: isVideoPortrait ? naturalSize.width : naturalSize.height
+                    )
+                }
+
+                // Create instruction for this clip
+                let instruction = AVMutableVideoCompositionInstruction()
+                let duration = CMTime(seconds: clip.assetDuration, preferredTimescale: 600)
+                instruction.timeRange = CMTimeRange(start: currentTime, duration: duration)
+
+                if let compositionTrack = composition.tracks(withMediaType: AVMediaType.video).first {
+                    let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
+                    layerInstruction.setTransform(transform, at: currentTime)
+                    instruction.layerInstructions = [layerInstruction]
+                }
+
+                instructions.append(instruction)
+                currentTime = currentTime + duration
+            }
+        }
+
+        videoComposition.instructions = instructions
+
+        // Configure export session
+        exportSession.videoComposition = videoComposition
+        exportSession.outputURL = outputURL
+        exportSession.outputFileType = .mp4
+        exportSession.shouldOptimizeForNetworkUse = true
+
         // Export using the modern async/await API
         try await exportSession.export(to: outputURL, as: .mp4)
 
@@ -551,22 +598,181 @@ class VideoEditViewModel: ObservableObject {
         totalDuration = 0
     }
 
-    func swapClips(at index: Int) {
-        guard index < clips.count - 1 else { return }
+    private func setupPlayerWithComposition() async {
+        print("Starting setupPlayerWithComposition")
+        guard let _ = composition else { 
+            print("No composition available")
+            return 
+        }
 
-        // Swap the clips
+        do {
+            print("Creating new composition")
+            let newComposition = AVMutableComposition()
+            var currentTime = CMTime.zero
+
+            // Create video composition
+            let videoComposition = AVMutableVideoComposition()
+            videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+            var instructions: [AVMutableVideoCompositionInstruction] = []
+
+            // Process each clip
+            for (index, clip) in clips.enumerated() {
+                print("Processing clip \(index) with startTime: \(clip.startTime), endTime: \(clip.endTime)")
+                print("Clip \(index) asset start time: \(clip.assetStartTime), duration: \(clip.assetDuration)")
+                
+                if let videoTrack = try await clip.asset.loadTracks(withMediaType: AVMediaType.video).first {
+                    let naturalSize = videoTrack.naturalSize
+                    let transform = videoTrack.preferredTransform
+                    let assetDuration = try await clip.asset.load(.duration)
+                    
+                    print("Clip \(index) full asset duration: \(assetDuration.seconds)")
+
+                    // Add video track
+                    let compositionVideoTrack = newComposition.addMutableTrack(
+                        withMediaType: AVMediaType.video,
+                        preferredTrackID: kCMPersistentTrackID_Invalid
+                    )
+
+                    // Use the original asset time range
+                    let timeRange = CMTimeRange(
+                        start: CMTime(seconds: clip.assetStartTime, preferredTimescale: 600),
+                        duration: CMTime(seconds: clip.assetDuration, preferredTimescale: 600)
+                    )
+
+                    print("Inserting clip \(index) from asset time: \(clip.assetStartTime) at composition time: \(currentTime.seconds)")
+                    try compositionVideoTrack?.insertTimeRange(
+                        timeRange,
+                        of: videoTrack,
+                        at: currentTime
+                    )
+
+                    // Create instruction for this clip
+                    let instruction = AVMutableVideoCompositionInstruction()
+                    instruction.timeRange = CMTimeRange(
+                        start: currentTime,
+                        duration: CMTime(seconds: clip.assetDuration, preferredTimescale: 600)
+                    )
+
+                    let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionVideoTrack!)
+                    layerInstruction.setTransform(transform, at: .zero)
+                    instruction.layerInstructions = [layerInstruction]
+                    instructions.append(instruction)
+
+                    // Set video composition render size if not already set
+                    if videoComposition.renderSize == .zero {
+                        let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
+                        videoComposition.renderSize = CGSize(
+                            width: isVideoPortrait ? naturalSize.height : naturalSize.width,
+                            height: isVideoPortrait ? naturalSize.width : naturalSize.height
+                        )
+                        print("Set video composition render size to: \(videoComposition.renderSize)")
+                    }
+
+                    // Add audio if available
+                    if let audioTrack = try await clip.asset.loadTracks(withMediaType: AVMediaType.audio).first {
+                        let compositionAudioTrack = newComposition.addMutableTrack(
+                            withMediaType: AVMediaType.audio,
+                            preferredTrackID: kCMPersistentTrackID_Invalid
+                        )
+
+                        try compositionAudioTrack?.insertTimeRange(
+                            timeRange,
+                            of: audioTrack,
+                            at: currentTime
+                        )
+                        print("Added audio track for clip \(index)")
+                    }
+
+                    currentTime = currentTime + CMTime(seconds: clip.assetDuration, preferredTimescale: 600)
+                    print("Updated currentTime to: \(currentTime.seconds)")
+                }
+            }
+
+            // Set all instructions
+            videoComposition.instructions = instructions
+            print("Set \(instructions.count) video composition instructions")
+
+            await MainActor.run {
+                print("Updating player on main thread")
+                // Update the composition
+                self.composition = newComposition
+                totalDuration = currentTime.seconds
+                print("Total duration updated to: \(totalDuration)")
+
+                // Create new player item with the updated composition
+                let playerItem = AVPlayerItem(asset: newComposition)
+                playerItem.videoComposition = videoComposition
+
+                if let player = player {
+                    print("Replacing existing player item")
+                    player.replaceCurrentItem(with: playerItem)
+                } else {
+                    print("Creating new player")
+                    player = AVPlayer(playerItem: playerItem)
+                }
+
+                // Setup time observer if needed
+                if timeObserver == nil {
+                    print("Setting up time observer")
+                    setupTimeObserver()
+                }
+
+                // Maintain playback
+                print("Starting playback")
+                player?.play()
+            }
+            print("Successfully completed setupPlayerWithComposition")
+        } catch {
+            print("Error in setupPlayerWithComposition: \(error.localizedDescription)")
+            print("Error details: \(error)")
+        }
+    }
+
+    func swapClips(at index: Int) {
+        print("Starting swapClips at index: \(index)")
+        guard index < clips.count - 1 else {
+            print("Invalid swap index")
+            return
+        }
+
+        // First update the clips array
         clips.swapAt(index, index + 1)
+        print("Swapped clips at indices \(index) and \(index + 1)")
 
         // Update selected clip index if needed
         if selectedClipIndex == index {
             selectedClipIndex = index + 1
+            print("Updated selected clip index to: \(index + 1)")
         } else if selectedClipIndex == index + 1 {
             selectedClipIndex = index
+            print("Updated selected clip index to: \(index)")
         }
 
-        // Update player with new clip order
+        // Rebuild the composition with the new clip order
         Task {
+            print("Starting composition rebuild")
+            await MainActor.run {
+                isProcessing = true
+            }
+            
+            // Recalculate clip times based on their new positions
+            var currentTime = 0.0
+            for i in 0..<clips.count {
+                let clipDuration = clips[i].endTime - clips[i].startTime
+                var updatedClip = clips[i]
+                updatedClip.startTime = currentTime
+                updatedClip.endTime = currentTime + clipDuration
+                clips[i] = updatedClip
+                print("Updated clip \(i) times - start: \(currentTime), end: \(currentTime + clipDuration)")
+                currentTime += clipDuration
+            }
+            
             await setupPlayerWithComposition()
+            
+            await MainActor.run {
+                isProcessing = false
+                print("Completed swapClips operation")
+            }
         }
     }
 
@@ -630,14 +836,14 @@ class VideoEditViewModel: ObservableObject {
             for (index, currentClip) in clips.enumerated() {
                 if index == clipIndex {
                     // Get the video track from the original asset
-                    guard let videoTrack = try await currentClip.asset.loadTracks(withMediaType: .video).first else {
+                    guard let videoTrack = try await currentClip.asset.loadTracks(withMediaType: AVMediaType.video).first else {
                         print("No video track found")
                         continue
                     }
 
                     // First part
                     let firstVideoTrack = newComposition.addMutableTrack(
-                        withMediaType: .video,
+                        withMediaType: AVMediaType.video,
                         preferredTrackID: kCMPersistentTrackID_Invalid
                     )
 
@@ -666,7 +872,7 @@ class VideoEditViewModel: ObservableObject {
 
                     // Set video composition render size if not already set
                     if videoComposition.renderSize == .zero {
-                        let naturalSize = try await videoTrack.load(.naturalSize)
+                        let naturalSize = videoTrack.naturalSize
                         let isVideoPortrait = videoTrack.preferredTransform.a == 0 && abs(videoTrack.preferredTransform.b) == 1
                         videoComposition.renderSize = CGSize(
                             width: isVideoPortrait ? naturalSize.height : naturalSize.width,
@@ -675,9 +881,9 @@ class VideoEditViewModel: ObservableObject {
                     }
 
                     // Add audio for first part
-                    if let audioTrack = try await currentClip.asset.loadTracks(withMediaType: .audio).first {
+                    if let audioTrack = try await currentClip.asset.loadTracks(withMediaType: AVMediaType.audio).first {
                         let firstAudioTrack = newComposition.addMutableTrack(
-                            withMediaType: .audio,
+                            withMediaType: AVMediaType.audio,
                             preferredTrackID: kCMPersistentTrackID_Invalid
                         )
 
@@ -692,7 +898,7 @@ class VideoEditViewModel: ObservableObject {
 
                     // Second part
                     let secondVideoTrack = newComposition.addMutableTrack(
-                        withMediaType: .video,
+                        withMediaType: AVMediaType.video,
                         preferredTrackID: kCMPersistentTrackID_Invalid
                     )
 
@@ -720,9 +926,9 @@ class VideoEditViewModel: ObservableObject {
                     instructions.append(secondInstruction)
 
                     // Add audio for second part
-                    if let audioTrack = try await currentClip.asset.loadTracks(withMediaType: .audio).first {
+                    if let audioTrack = try await currentClip.asset.loadTracks(withMediaType: AVMediaType.audio).first {
                         let secondAudioTrack = newComposition.addMutableTrack(
-                            withMediaType: .audio,
+                            withMediaType: AVMediaType.audio,
                             preferredTrackID: kCMPersistentTrackID_Invalid
                         )
 
@@ -758,6 +964,7 @@ class VideoEditViewModel: ObservableObject {
                         var firstClip = clips[clipIndex]
                         firstClip.thumbnail = firstThumbnail
                         firstClip.endTime = time
+                        firstClip.assetDuration = relativeTime  // Set the duration of the first part
                         clips[clipIndex] = firstClip
 
                         // Create and insert the second part
@@ -765,13 +972,15 @@ class VideoEditViewModel: ObservableObject {
                             asset: currentClip.asset,
                             startTime: time,
                             endTime: currentClip.endTime,
-                            thumbnail: secondThumbnail
+                            thumbnail: secondThumbnail,
+                            assetStartTime: relativeTime,
+                            assetDuration: currentClip.assetDuration - relativeTime  // Set the remaining duration
                         )
                         clips.insert(secondClip, at: clipIndex + 1)
                     }
                 } else {
                     // Copy this clip as is
-                    guard let videoTrack = try await currentClip.asset.loadTracks(withMediaType: .video).first else { continue }
+                    guard let videoTrack = try await currentClip.asset.loadTracks(withMediaType: AVMediaType.video).first else { continue }
 
                     let clipDuration = currentClip.endTime - currentClip.startTime
                     let clipTimeRange = CMTimeRange(
@@ -780,7 +989,7 @@ class VideoEditViewModel: ObservableObject {
                     )
 
                     let compositionVideoTrack = newComposition.addMutableTrack(
-                        withMediaType: .video,
+                        withMediaType: AVMediaType.video,
                         preferredTrackID: kCMPersistentTrackID_Invalid
                     )
 
@@ -801,7 +1010,7 @@ class VideoEditViewModel: ObservableObject {
 
                     // Set video composition render size if not already set
                     if videoComposition.renderSize == .zero {
-                        let naturalSize = try await videoTrack.load(.naturalSize)
+                        let naturalSize = videoTrack.naturalSize
                         let isVideoPortrait = videoTrack.preferredTransform.a == 0 && abs(videoTrack.preferredTransform.b) == 1
                         videoComposition.renderSize = CGSize(
                             width: isVideoPortrait ? naturalSize.height : naturalSize.width,
@@ -810,9 +1019,9 @@ class VideoEditViewModel: ObservableObject {
                     }
 
                     // Add audio if available
-                    if let audioTrack = try await currentClip.asset.loadTracks(withMediaType: .audio).first {
+                    if let audioTrack = try await currentClip.asset.loadTracks(withMediaType: AVMediaType.audio).first {
                         let compositionAudioTrack = newComposition.addMutableTrack(
-                            withMediaType: .audio,
+                            withMediaType: AVMediaType.audio,
                             preferredTrackID: kCMPersistentTrackID_Invalid
                         )
 
@@ -870,8 +1079,8 @@ class VideoEditViewModel: ObservableObject {
 
     // Fix unused naturalSize warning
     private func configureVideoComposition(_ videoComposition: AVMutableVideoComposition, with videoTrack: AVAssetTrack) async throws {
-        let size = try await videoTrack.load(.naturalSize)
-        let transform = try await videoTrack.load(.preferredTransform)
+        let size = videoTrack.naturalSize
+        let transform = videoTrack.preferredTransform
 
         let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
         let renderWidth = isVideoPortrait ? size.height : size.width
@@ -879,23 +1088,6 @@ class VideoEditViewModel: ObservableObject {
 
         videoComposition.renderSize = CGSize(width: renderWidth, height: renderHeight)
         videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
-    }
-
-    private func setupPlayerWithComposition() async {
-        guard let composition = composition else { return }
-
-        await MainActor.run {
-            // Create player item
-            let playerItem = AVPlayerItem(asset: composition)
-
-            // Create or update player
-            if let player = player {
-                player.replaceCurrentItem(with: playerItem)
-            } else {
-                player = AVPlayer(playerItem: playerItem)
-                setupTimeObserver()
-            }
-        }
     }
 }
 

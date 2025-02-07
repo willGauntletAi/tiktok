@@ -194,7 +194,7 @@ struct VideoTimelineView: View {
     }
 
     private func clipWidth(for clip: VideoClip, in totalWidth: CGFloat) -> CGFloat {
-        let clipDuration = clip.endTime - clip.startTime
+        let clipDuration = clip.assetDuration
         let totalDuration = viewModel.totalDuration
         guard totalDuration > 0 else { return 0 }
 
@@ -206,6 +206,7 @@ struct VideoTimelineView: View {
         guard seconds.isFinite, !seconds.isNaN, seconds >= 0 else {
             return "0:00"
         }
+        
         let minutes = Int(max(0, seconds)) / 60
         let seconds = Int(max(0, seconds)) % 60
         return String(format: "%d:%02d", minutes, seconds)
