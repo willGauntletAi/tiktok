@@ -97,7 +97,7 @@ struct VideoTrimmerView: View {
                 totalWidth = availableWidth
                 generateThumbnails()
             }
-            .onChange(of: geometry.size.width) { oldValue, newValue in
+            .onChange(of: geometry.size.width) { _, newValue in
                 totalWidth = newValue
             }
         }

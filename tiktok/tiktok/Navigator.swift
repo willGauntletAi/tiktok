@@ -33,11 +33,11 @@ enum Destination: Hashable, Identifiable {
             return "profileVideo-\(workoutPlan.id)"
         }
     }
-    
+
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
-    
+
     static func == (lhs: Destination, rhs: Destination) -> Bool {
         lhs.id == rhs.id
     }
@@ -112,7 +112,7 @@ func view(for destination: Destination) -> some View {
 final class Navigator: ObservableObject {
     @Published var path = NavigationPath()
     @Published var presentedSheet: Destination?
-    
+
     static let shared = Navigator()
 
     private func logNavigation(_ message: String) {

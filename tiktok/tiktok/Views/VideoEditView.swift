@@ -26,7 +26,7 @@ struct VideoTimelineView: View {
                         Rectangle()
                             .fill(Color.black.opacity(0.2))
                             .frame(height: thumbnailHeight)
-                        
+
                         // Seek gesture overlay
                         Rectangle()
                             .fill(Color.clear)
@@ -51,7 +51,7 @@ struct VideoTimelineView: View {
                                     }
                             )
                             .allowsHitTesting(true)
-                        
+
                         // Clips thumbnails with buttons on top
                         HStack(spacing: 0) {
                             ForEach(Array(viewModel.clips.enumerated()), id: \.element.id) { index, clip in
@@ -75,7 +75,7 @@ struct VideoTimelineView: View {
                                             .onTapGesture {
                                                 viewModel.selectedClipIndex = index
                                             }
-                                            .allowsHitTesting(false)  // Let seek gesture handle taps
+                                            .allowsHitTesting(false) // Let seek gesture handle taps
                                     } else {
                                         Rectangle()
                                             .fill(Color.gray.opacity(0.3))
@@ -83,7 +83,7 @@ struct VideoTimelineView: View {
                                                 width: clipWidth(for: clip, in: geometry.size.width),
                                                 height: thumbnailHeight
                                             )
-                                            .allowsHitTesting(false)  // Let seek gesture handle taps
+                                            .allowsHitTesting(false) // Let seek gesture handle taps
                                     }
 
                                     // Delete button
@@ -97,7 +97,7 @@ struct VideoTimelineView: View {
                                                 .background(Circle().fill(Color.white))
                                                 .padding(4)
                                         }
-                                        .allowsHitTesting(true)  // Ensure button remains tappable
+                                        .allowsHitTesting(true) // Ensure button remains tappable
 
                                         Spacer()
                                     }
@@ -114,7 +114,7 @@ struct VideoTimelineView: View {
                                                 .foregroundColor(.white)
                                         }
                                         .offset(x: swapButtonSize / 2)
-                                        .allowsHitTesting(true)  // Ensure button remains tappable
+                                        .allowsHitTesting(true) // Ensure button remains tappable
                                     }
                                 }
                             }
@@ -132,7 +132,7 @@ struct VideoTimelineView: View {
                                 y: -10
                             )
                             .shadow(radius: 2)
-                            .allowsHitTesting(false)  // Don't let indicator block gestures
+                            .allowsHitTesting(false) // Don't let indicator block gestures
                     }
                 }
                 .frame(height: thumbnailHeight)
@@ -169,7 +169,7 @@ struct VideoTimelineView: View {
     private func seekToTime(_ time: Double) {
         guard let player = viewModel.player else { return }
         let targetTime = CMTime(seconds: time, preferredTimescale: 600)
-        
+
         Task {
             await player.seek(
                 to: targetTime,
@@ -181,14 +181,14 @@ struct VideoTimelineView: View {
 
     private func startPositionTimer() {
         // Create a timer that updates every 1/30th of a second
-        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [self] timer in
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [self] _ in
             Task { @MainActor in
                 guard !isDragging,
                       let player = viewModel.player else { return }
                 currentPosition = player.currentTime().seconds
             }
         }
-        
+
         // Make sure timer continues to fire when scrolling
         RunLoop.current.add(timer, forMode: .common)
     }
@@ -197,7 +197,7 @@ struct VideoTimelineView: View {
         let clipDuration = clip.endTime - clip.startTime
         let totalDuration = viewModel.totalDuration
         guard totalDuration > 0 else { return 0 }
-        
+
         // Calculate proportional width based on duration
         return totalWidth * CGFloat(clipDuration / totalDuration)
     }
@@ -292,10 +292,10 @@ struct VideoEditView: View {
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(.orange)
-                            .disabled(viewModel.currentPosition <= 0 || 
-                                     viewModel.currentPosition >= viewModel.totalDuration || 
-                                     isAddingClip || 
-                                     viewModel.isProcessing)
+                            .disabled(viewModel.currentPosition <= 0 ||
+                                viewModel.currentPosition >= viewModel.totalDuration ||
+                                isAddingClip ||
+                                viewModel.isProcessing)
                         }
                     }
                     .padding(.horizontal)
@@ -343,7 +343,7 @@ struct VideoEditView: View {
         } message: {
             Text(viewModel.errorMessage ?? "Failed to export video")
         }
-        .onChange(of: selectedItem) { oldValue, newValue in
+        .onChange(of: selectedItem) { _, newValue in
             if let item = newValue {
                 print("Starting to process selected item")
                 Task {

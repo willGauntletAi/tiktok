@@ -56,7 +56,7 @@ struct VideoClipsListView: View {
                 .foregroundColor(.gray)
             }
         }
-        .onChange(of: selectedItem) { oldValue, newValue in
+        .onChange(of: selectedItem) { _, newValue in
             if let item = newValue {
                 Task {
                     do {

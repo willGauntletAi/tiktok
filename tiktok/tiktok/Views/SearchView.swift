@@ -18,7 +18,7 @@ struct SearchView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
-                .onChange(of: viewModel.selectedContentType) { oldValue, newValue in
+                .onChange(of: viewModel.selectedContentType) { _, _ in
                     Task {
                         await viewModel.search()
                     }
@@ -120,7 +120,7 @@ struct SearchView: View {
         }
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: viewModel.searchText) { oldValue, newValue in
+        .onChange(of: viewModel.searchText) { _, _ in
             Task {
                 await viewModel.search()
             }

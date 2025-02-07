@@ -20,14 +20,14 @@ class VideoDetailViewModel: ObservableObject {
             await refreshVideo()
         }
     }
-    
+
     func updateVideoId(_ newId: String) {
         videoId = newId
         Task {
             await refreshVideo()
         }
     }
-    
+
     private func refreshVideo() async {
         await checkIfLiked()
         await fetchInstructorName()

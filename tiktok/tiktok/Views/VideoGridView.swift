@@ -1,5 +1,5 @@
-import SwiftUI
 import FirebaseFirestore
+import SwiftUI
 
 struct VideoGridView: View {
     let videos: [ProfileViewModel.Video]
@@ -29,11 +29,11 @@ struct VideoGridView: View {
             .padding(.horizontal, 1)
         }
     }
-    
+
     private func handleVideoTap(_ video: ProfileViewModel.Video) async {
         do {
             var videosToShow: [any VideoContent] = []
-            
+
             switch video.type {
             case .workoutPlan:
                 // Fetch the complete workout plan with its workouts and exercises
@@ -53,10 +53,10 @@ struct VideoGridView: View {
                         createdAt: video.createdAt,
                         updatedAt: video.updatedAt
                     )
-                    
+
                     // Add the plan itself first
                     videosToShow.append(plan)
-                    
+
                     // Fetch and add workouts and their exercises
                     if let workoutDicts = planData["workouts"] as? [[String: Any]] {
                         for workoutDict in workoutDicts {
@@ -79,7 +79,7 @@ struct VideoGridView: View {
                                         updatedAt: (workoutData["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
                                     )
                                     videosToShow.append(workout)
-                                    
+
                                     // Add workout's exercises
                                     if let exerciseDicts = workoutData["exercises"] as? [[String: Any]] {
                                         for exerciseDict in exerciseDicts {
@@ -110,7 +110,7 @@ struct VideoGridView: View {
                         }
                     }
                 }
-                
+
             case .workout:
                 // Fetch the complete workout with its exercises
                 let workoutDoc = try await db.collection("videos").document(video.id).getDocument()
@@ -130,7 +130,7 @@ struct VideoGridView: View {
                         updatedAt: (workoutData["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
                     )
                     videosToShow.append(workout)
-                    
+
                     // Fetch and add exercises
                     if let exerciseDicts = workoutData["exercises"] as? [[String: Any]] {
                         for exerciseDict in exerciseDicts {
@@ -157,7 +157,7 @@ struct VideoGridView: View {
                         }
                     }
                 }
-                
+
             case .exercise:
                 // For exercises, just create and add the exercise itself
                 let exercise = Exercise(
@@ -176,16 +176,16 @@ struct VideoGridView: View {
                 )
                 videosToShow.append(exercise)
             }
-            
+
             print("🎬 VideoGridView: Navigating to video detail with \(videosToShow.count) videos")
-            videosToShow.enumerated().forEach { index, video in
+            for (index, video) in videosToShow.enumerated() {
                 print("  [\(index)] \(video.id): \(video.title)")
             }
-            
+
             await MainActor.run {
                 navigator.navigate(to: .videoDetail(videos: videosToShow, startIndex: 0))
             }
-            
+
         } catch {
             print("❌ Error fetching video content: \(error)")
         }

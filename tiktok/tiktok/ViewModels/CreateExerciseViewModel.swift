@@ -27,11 +27,13 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
         get { _captureSession }
         set { _captureSession = newValue }
     }
+
     private var _videoOutput: AVCaptureMovieFileOutput?
     var videoOutput: AVCaptureMovieFileOutput? {
         get { _videoOutput }
         set { _videoOutput = newValue }
     }
+
     private var deviceInput: AVCaptureDeviceInput?
     private var temporaryRecordingURL: URL?
     private var recordingDelegate = VideoRecordingDelegate()
@@ -113,14 +115,14 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
             let imageGenerator = AVAssetImageGenerator(asset: asset)
             imageGenerator.appliesPreferredTrackTransform = true
             imageGenerator.maximumSize = CGSize(width: 400, height: 400) // Limit size for faster generation
-            
+
             // Use the new async API for generating thumbnails
             let time = CMTime.zero
             let image = try await imageGenerator.image(at: time)
-            
+
             // Load duration
             let duration = try await asset.load(.duration)
-            
+
             // Update UI on main actor
             exercise.duration = Int(duration.seconds)
             videoThumbnail = UIImage(cgImage: image.image)
@@ -225,11 +227,11 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
 
         // Add video preview output
         let videoOutput = AVCaptureVideoDataOutput()
-        
+
         // Create a dedicated serial queue for sample buffer handling
         let sampleBufferQueue = DispatchQueue(label: "com.app.samplebuffer")
         videoOutput.setSampleBufferDelegate(self, queue: sampleBufferQueue)
-        
+
         videoOutput.videoSettings = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
         ]
@@ -260,15 +262,15 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
             )
         }
         session.addOutput(movieOutput)
-        
+
         // Store references in a thread-safe way
         await MainActor.run {
             self._captureSession = session
             self._videoOutput = movieOutput
         }
-        
+
         session.commitConfiguration()
-        
+
         // Start the session on a background queue
         Task.detached {
             session.startRunning()

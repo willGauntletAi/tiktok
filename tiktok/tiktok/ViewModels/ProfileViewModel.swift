@@ -18,7 +18,7 @@ class ProfileViewModel: ObservableObject {
     init(userId: String? = nil) {
         print("🎬 ProfileViewModel: Initializing with userId: \(userId ?? "nil (current user)")")
         self.userId = userId
-        
+
         // If we're showing the current user's profile, verify auth state
         if userId == nil {
             if let currentUserId = Auth.auth().currentUser?.uid {
@@ -67,7 +67,7 @@ class ProfileViewModel: ObservableObject {
     func fetchUserProfile() async {
         print("🎬 ProfileViewModel: Starting fetch with userId: \(userId ?? "nil (current user)")")
         print("🎬 ProfileViewModel: Current auth user ID: \(auth.currentUser?.uid ?? "no auth user")")
-        
+
         isLoading = true
         error = nil
 
@@ -109,7 +109,7 @@ class ProfileViewModel: ObservableObject {
 
             let videosDocs = try await videosQuery.getDocuments()
             print("🎬 ProfileViewModel: Found \(videosDocs.documents.count) videos")
-            
+
             userVideos = videosDocs.documents.compactMap { doc in
                 createVideoFromDoc(doc)
             }
@@ -182,7 +182,7 @@ class ProfileViewModel: ObservableObject {
             .whereField("userId", isEqualTo: userId)
             .whereField("videoId", isEqualTo: videoId)
             .getDocuments()
-        
+
         for doc in likeDocs.documents {
             try await doc.reference.delete()
             print("✅ ProfileViewModel: Deleted orphaned like document: \(doc.documentID)")

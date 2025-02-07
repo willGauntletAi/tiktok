@@ -7,7 +7,7 @@ struct VideoDetailView: View {
     let startIndex: Int
     let showBackButton: Bool
     let onBack: (() -> Void)?
-    
+
     @StateObject private var viewModel: VideoDetailViewModel
     @State private var player: AVPlayer?
     @State private var isExpanded = false
@@ -24,17 +24,17 @@ struct VideoDetailView: View {
     ) {
         print("🎬 VideoDetailView: Initializing with startIndex: \(index)")
         print("🎬 VideoDetailView: Videos: \(videos.map { "\($0.id): \($0.title)" })")
-        
+
         self.videos = videos
-        self.startIndex = index
+        startIndex = index
         self.showBackButton = showBackButton
         self.onBack = onBack
-        
+
         // Initialize with the correct video ID based on startIndex
         let videoId = videos[index].id
         _viewModel = StateObject(wrappedValue: VideoDetailViewModel(videoId: videoId))
         _currentPosition = State(initialValue: videoId)
-        
+
         print("🎬 VideoDetailView: Set initial videoId to: \(videoId)")
     }
 
@@ -50,7 +50,7 @@ struct VideoDetailView: View {
         GeometryReader { geometry in
             // Debug print for showBackButton
             let _ = print("🔍 showBackButton value: \(showBackButton)")
-            
+
             if videos.isEmpty {
                 VStack {
                     Text("No videos to display")
@@ -257,7 +257,7 @@ struct VideoDetailView: View {
                         print("🎬 VideoDetailView: Setting initial scroll position to video at index \(startIndex)")
                         currentPosition = videos[startIndex].id
                     }
-                    .scrollDisabled(false)  // Ensure scrolling is enabled
+                    .scrollDisabled(false) // Ensure scrolling is enabled
                     .simultaneousGesture(
                         DragGesture()
                             .onChanged { _ in
