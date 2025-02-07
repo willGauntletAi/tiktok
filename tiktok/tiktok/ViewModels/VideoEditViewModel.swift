@@ -205,8 +205,10 @@ class VideoEditViewModel: ObservableObject {
         // Add new time observer with optimized interval
         let interval = CMTime(value: 1, timescale: 30) // Update 30 times per second
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            guard let self = self else { return }
-            self.currentPosition = time.seconds
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.currentPosition = time.seconds
+            }
         }
     }
 
@@ -250,7 +252,7 @@ class VideoEditViewModel: ObservableObject {
 
         // Update player with new composition
         Task {
-            try? await setupPlayerWithComposition()
+            await setupPlayerWithComposition()
             // Seek to start of modified clip
             if let player = _player {
                 await player.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
@@ -277,7 +279,7 @@ class VideoEditViewModel: ObservableObject {
         }
         // Update player with new clip order
         Task {
-            try? await setupPlayerWithComposition()
+            await setupPlayerWithComposition()
         }
     }
 
@@ -288,17 +290,27 @@ class VideoEditViewModel: ObservableObject {
         }
         // Update player with remaining clips
         Task {
-            try? await setupPlayerWithComposition()
+            await setupPlayerWithComposition()
         }
     }
 
     func exportVideo() async throws -> URL {
         guard let composition = composition else { throw VideoError.noComposition }
         
-        isProcessing = true
-        defer { isProcessing = false }
+        await MainActor.run {
+            isProcessing = true
+        }
+        defer {
+            Task { @MainActor in
+                isProcessing = false
+            }
+        }
         
-        // Create export session
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("mp4")
+        
+        // Create export session on the main actor to avoid data races
         guard let exportSession = AVAssetExportSession(
             asset: composition,
             presetName: AVAssetExportPresetHighestQuality
@@ -306,22 +318,30 @@ class VideoEditViewModel: ObservableObject {
             throw VideoError.exportSessionCreationFailed
         }
         
-        // Configure export
-        let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension("mp4")
+        // Export using the modern async/await API
+        try await exportSession.export(to: outputURL, as: .mp4)
         
-        exportSession.outputURL = outputURL
-        exportSession.outputFileType = .mp4
-        
-        // Export
-        await exportSession.export()
-        
-        guard exportSession.status == .completed else {
-            throw exportSession.error ?? VideoError.exportFailed
+        // Monitor export states using async sequence
+        for try await state in exportSession.states() {
+            switch state {
+            case .pending:
+                continue
+            case .waiting:
+                continue
+            case .exporting(let progress):
+                print("Export progress: \(progress.fractionCompleted)")
+                continue
+            @unknown default:
+                continue
+            }
         }
         
-        return outputURL
+        // After the export completes, check if the file exists
+        if FileManager.default.fileExists(atPath: outputURL.path) {
+            return outputURL
+        } else {
+            throw VideoError.exportFailed
+        }
     }
 
     func cleanup() {
@@ -353,7 +373,7 @@ class VideoEditViewModel: ObservableObject {
 
         // Update player with new clip order
         Task {
-            try? await setupPlayerWithComposition()
+            await setupPlayerWithComposition()
         }
     }
 
@@ -389,7 +409,7 @@ class VideoEditViewModel: ObservableObject {
             // Split each track at the specified time
             for (index, track) in tracks.enumerated() {
                 print("Processing track \(index + 1) of \(tracks.count)")
-                guard let segment = try await track.segment(forTrackTime: splitTime) else {
+                guard let segment = track.segment(forTrackTime: splitTime) else {
                     print("No segment found for track \(index + 1)")
                     continue
                 }
@@ -413,7 +433,7 @@ class VideoEditViewModel: ObservableObject {
                 )
                 
                 print("Trimming original track")
-                try track.removeTimeRange(
+                track.removeTimeRange(
                     CMTimeRange(start: splitTime, end: timeMapping.target.end)
                 )
             }
@@ -463,8 +483,8 @@ class VideoEditViewModel: ObservableObject {
         videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
     }
 
-    private func setupPlayerWithComposition() async throws {
-        guard let composition = composition else { throw VideoError.noComposition }
+    private func setupPlayerWithComposition() async {
+        guard let composition = composition else { return }
         
         await MainActor.run {
             // Create player item
@@ -489,6 +509,7 @@ enum VideoError: LocalizedError {
     case noComposition
     case exportSessionCreationFailed
     case exportFailed
+    case exportCancelled
     
     var errorDescription: String? {
         switch self {
@@ -504,6 +525,8 @@ enum VideoError: LocalizedError {
             return "Failed to create export session"
         case .exportFailed:
             return "Failed to export video"
+        case .exportCancelled:
+            return "Video export was cancelled"
         }
     }
 }

@@ -9,7 +9,6 @@ struct ExerciseState {
     var errorMessage: String
 }
 
-@MainActor
 class WorkoutCompletionViewModel: ObservableObject {
     let workoutId: String
     @Published var isLoadingHistory = false

@@ -181,10 +181,11 @@ struct VideoTimelineView: View {
     private func startPositionTimer() {
         // Create a timer that updates every 1/30th of a second
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [self] timer in
-            guard !isDragging,
-                  let player = viewModel.player else { return }
-            
+                        
             Task { @MainActor in
+                guard !isDragging,
+                      let player = viewModel.player else { return }
+
                 currentPosition = player.currentTime().seconds
             }
         }
