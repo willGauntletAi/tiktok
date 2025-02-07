@@ -5,7 +5,7 @@ enum Destination: Hashable, Identifiable {
     case exerciseCompletion(exercise: Exercise)
     case userProfile(userId: String)
     case profile
-    case videoFeed(videos: [WorkoutPlan], startIndex: Int)
+    case videoFeed(videos: [[any VideoContent]], startIndex: Int)
     case exercise(Exercise)
     case workout(Workout)
     case workoutPlan(WorkoutPlan)
@@ -22,7 +22,7 @@ enum Destination: Hashable, Identifiable {
         case .profile:
             return "profile"
         case let .videoFeed(videos, startIndex):
-            return "videoFeed-\(videos.first?.id ?? "")-\(startIndex)"
+            return "videoFeed-\(videos.first?.first?.id ?? "")-\(startIndex)"
         case let .exercise(exercise):
             return "exercise-\(exercise.id)"
         case let .workout(workout):

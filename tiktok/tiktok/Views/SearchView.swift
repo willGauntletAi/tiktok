@@ -143,19 +143,20 @@ struct ContentCard: View {
 
     var body: some View {
         Button(action: {
-            let videos: [any VideoContent]
             switch destination {
             case let .exercise(exercise):
-                // Just the single exercise
-                videos = [exercise]
+                // For exercises, create a list of videos
+                let videos = [exercise]
+                navigator.navigate(to: .videoFeed(videos: [videos], startIndex: 0))
             case let .workout(workout):
-                // Use the standard getAllVideos method
-                videos = workout.getAllVideos()
+                // For workouts, get all videos
+                let videos = workout.getAllVideos()
+                navigator.navigate(to: .videoFeed(videos: [videos], startIndex: 0))
             case let .workoutPlan(plan):
-                // Use the standard getAllVideos method
-                videos = plan.getAllVideos()
+                // For workout plans, get all videos
+                let videos = plan.getAllVideos()
+                navigator.navigate(to: .videoFeed(videos: [videos], startIndex: 0))
             }
-            navigator.navigate(to: .videoDetail(videos: videos, startIndex: 0))
         }) {
             VStack(alignment: .leading) {
                 AsyncImage(url: URL(string: thumbnailUrl)) { image in
