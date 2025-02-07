@@ -56,8 +56,8 @@ struct VideoClipsListView: View {
                 .foregroundColor(.gray)
             }
         }
-        .onChange(of: selectedItem) { item in
-            if let item = item {
+        .onChange(of: selectedItem) { oldValue, newValue in
+            if let item = newValue {
                 Task {
                     do {
                         if let data = try? await item.loadTransferable(type: Data.self) {

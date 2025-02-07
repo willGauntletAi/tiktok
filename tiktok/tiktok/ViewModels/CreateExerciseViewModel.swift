@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import CoreImage
 import FirebaseAuth
 import FirebaseFirestore
@@ -22,8 +22,16 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
     @Published var currentFrame: CGImage?
 
     // Camera session properties
-    var captureSession: AVCaptureSession?
-    var videoOutput: AVCaptureMovieFileOutput?
+    private var _captureSession: AVCaptureSession?
+    var captureSession: AVCaptureSession? {
+        get { _captureSession }
+        set { _captureSession = newValue }
+    }
+    private var _videoOutput: AVCaptureMovieFileOutput?
+    var videoOutput: AVCaptureMovieFileOutput? {
+        get { _videoOutput }
+        set { _videoOutput = newValue }
+    }
     private var deviceInput: AVCaptureDeviceInput?
     private var temporaryRecordingURL: URL?
     private var recordingDelegate = VideoRecordingDelegate()
@@ -99,22 +107,23 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
                 UUID().uuidString + ".mov")
             try data.write(to: tmpURL)
 
-            let asset = AVAsset(url: tmpURL)
+            let asset = AVURLAsset(url: tmpURL)
 
             // Configure thumbnail generator for faster generation
             let imageGenerator = AVAssetImageGenerator(asset: asset)
             imageGenerator.appliesPreferredTrackTransform = true
             imageGenerator.maximumSize = CGSize(width: 400, height: 400) // Limit size for faster generation
-            imageGenerator.requestedTimeToleranceBefore = .zero
-            imageGenerator.requestedTimeToleranceAfter = .zero
-
-            // Load duration and generate thumbnail in parallel
-            async let duration = asset.load(.duration)
-            async let cgImage = imageGenerator.copyCGImage(at: .zero, actualTime: nil)
-
-            // Wait for both operations to complete
-            exercise.duration = try Int(await duration.seconds)
-            videoThumbnail = try UIImage(cgImage: await cgImage)
+            
+            // Use the new async API for generating thumbnails
+            let time = CMTime.zero
+            let image = try await imageGenerator.image(at: time)
+            
+            // Load duration
+            let duration = try await asset.load(.duration)
+            
+            // Update UI on main actor
+            exercise.duration = Int(duration.seconds)
+            videoThumbnail = UIImage(cgImage: image.image)
 
             try FileManager.default.removeItem(at: tmpURL)
 
@@ -216,7 +225,11 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
 
         // Add video preview output
         let videoOutput = AVCaptureVideoDataOutput()
-        videoOutput.setSampleBufferDelegate(self, queue: sessionQueue)
+        
+        // Create a dedicated serial queue for sample buffer handling
+        let sampleBufferQueue = DispatchQueue(label: "com.app.samplebuffer")
+        videoOutput.setSampleBufferDelegate(self, queue: sampleBufferQueue)
+        
         videoOutput.videoSettings = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
         ]
@@ -231,8 +244,8 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
 
         // Configure video connection
         if let connection = videoOutput.connection(with: .video) {
-            if connection.isVideoOrientationSupported {
-                connection.videoOrientation = .portrait
+            if connection.isVideoRotationAngleSupported(90.0) {
+                connection.videoRotationAngle = 90.0 // Portrait mode
             }
             if connection.isVideoMirroringSupported {
                 connection.isVideoMirrored = false
@@ -247,15 +260,17 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
             )
         }
         session.addOutput(movieOutput)
-        self.videoOutput = movieOutput
-
+        
+        // Store references in a thread-safe way
+        await MainActor.run {
+            self._captureSession = session
+            self._videoOutput = movieOutput
+        }
+        
         session.commitConfiguration()
-
-        // Update properties
-        captureSession = session
-
-        // Start the session
-        sessionQueue.async {
+        
+        // Start the session on a background queue
+        Task.detached {
             session.startRunning()
         }
     }

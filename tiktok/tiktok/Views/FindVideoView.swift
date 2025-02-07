@@ -45,14 +45,14 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
                         .keyboardType(.emailAddress)
                         .focused($focusedField, equals: .instructorEmail)
                         .submitLabel(.next)
-                        .onChange(of: viewModel.instructorEmail) { _ in
+                        .onChange(of: viewModel.instructorEmail) { oldValue, newValue in
                             Task {
                                 await viewModel.searchEmails()
                             }
                         }
-                        .onChange(of: focusedField) { field in
-                            viewModel.isEmailFocused = (field == .instructorEmail)
-                            if field == .instructorEmail {
+                        .onChange(of: focusedField) { oldValue, newValue in
+                            viewModel.isEmailFocused = (newValue == .instructorEmail)
+                            if newValue == .instructorEmail {
                                 Task {
                                     await viewModel.searchEmails()
                                 }
@@ -172,7 +172,7 @@ struct FindVideoView<T: VideoContent>: View where T.ID: Hashable {
             )
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .onChange(of: viewModel.searchText) { _ in
+            .onChange(of: viewModel.searchText) { oldValue, newValue in
                 Task {
                     await viewModel.search()
                 }

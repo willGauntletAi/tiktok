@@ -43,6 +43,7 @@ enum Destination: Hashable, Identifiable {
     }
 }
 
+@MainActor
 @ViewBuilder
 func view(for destination: Destination) -> some View {
     switch destination {
@@ -51,7 +52,7 @@ func view(for destination: Destination) -> some View {
             videos: videos,
             startAt: startIndex,
             showBackButton: true,
-            onBack: { @MainActor in
+            onBack: {
                 print("🎬 Navigator: Popping view after back button tap")
                 withAnimation {
                     Navigator.shared.pop()
@@ -71,7 +72,7 @@ func view(for destination: Destination) -> some View {
             videos: [exercise],
             startAt: 0,
             showBackButton: true,
-            onBack: { @MainActor in
+            onBack: {
                 print("🎬 Navigator: Popping view after back button tap")
                 withAnimation {
                     Navigator.shared.pop()
@@ -83,7 +84,7 @@ func view(for destination: Destination) -> some View {
             videos: workout.exercises,
             startAt: 0,
             showBackButton: true,
-            onBack: { @MainActor in
+            onBack: {
                 print("🎬 Navigator: Popping view after back button tap")
                 withAnimation {
                     Navigator.shared.pop()
@@ -95,7 +96,7 @@ func view(for destination: Destination) -> some View {
             videos: plan.workouts.flatMap { $0.workout.exercises },
             startAt: 0,
             showBackButton: true,
-            onBack: { @MainActor in
+            onBack: {
                 print("🎬 Navigator: Popping view after back button tap")
                 withAnimation {
                     Navigator.shared.pop()
@@ -107,6 +108,7 @@ func view(for destination: Destination) -> some View {
     }
 }
 
+@MainActor
 final class Navigator: ObservableObject {
     @Published var path = NavigationPath()
     @Published var presentedSheet: Destination?
@@ -137,7 +139,6 @@ final class Navigator: ObservableObject {
         }
     }
 
-    @MainActor
     func pop() {
         logNavigation("Popping view")
         withAnimation {

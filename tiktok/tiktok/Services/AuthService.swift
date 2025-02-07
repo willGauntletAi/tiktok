@@ -78,9 +78,10 @@ class AuthService: ObservableObject {
     func signOut() async throws {
         if let userId = currentUser?.id {
             // Remove FCM token when user signs out
-            try await db.collection("users").document(userId).updateData([
-                "fcmToken": FieldValue.delete(),
-            ])
+            let update: [String: Any] = ["fcmToken": FieldValue.delete()]
+            try await Task { @MainActor in
+                try await db.collection("users").document(userId).updateData(update)
+            }.value
         }
 
         try Auth.auth().signOut()

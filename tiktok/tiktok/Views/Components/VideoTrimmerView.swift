@@ -97,8 +97,8 @@ struct VideoTrimmerView: View {
                 totalWidth = availableWidth
                 generateThumbnails()
             }
-            .onChange(of: geometry.size.width) { newWidth in
-                totalWidth = newWidth
+            .onChange(of: geometry.size.width) { oldValue, newValue in
+                totalWidth = newValue
             }
         }
         .frame(height: thumbnailHeight)
@@ -199,7 +199,7 @@ struct VideoTrimmerHandle: View {
 
 #Preview {
     VideoTrimmerView(
-        asset: AVAsset(url: URL(string: "https://example.com/video.mp4")!),
+        asset: AVURLAsset(url: URL(string: "https://example.com/video.mp4")!),
         startTime: .constant(0),
         endTime: .constant(10),
         duration: 10

@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import SwiftUI
 import UIKit
 
@@ -35,18 +35,30 @@ class VideoEditViewModel: ObservableObject {
         didSet { updatePlayerVolume() }
     }
 
-    // Make player accessible to the view
+    // Thread-safe player access
+    private var _player: AVPlayer?
     var player: AVPlayer? {
-        _player
+        get {
+            _player
+        }
+        set {
+            _player = newValue
+        }
     }
 
-    private var _player: AVPlayer?
     private var playerItem: AVPlayerItem?
     private var timeObserver: Any?
     private var videoTrack: AVAssetTrack?
 
+    // Make totalDuration access thread-safe
+    private var _totalDuration: Double = 0
     var totalDuration: Double {
-        clips.reduce(0) { $0 + ($1.endTime - $1.startTime) }
+        get {
+            _totalDuration
+        }
+        set {
+            _totalDuration = newValue
+        }
     }
 
     func addClip(from url: URL) async throws {
@@ -54,24 +66,26 @@ class VideoEditViewModel: ObservableObject {
         defer { isProcessing = false }
 
         do {
-            let asset = AVAsset(url: url)
+            let asset = AVURLAsset(url: url)
 
             // Get video duration
             let duration = try await asset.load(.duration)
 
-            // Generate thumbnail
+            // Generate thumbnail using new async API
             let imageGenerator = AVAssetImageGenerator(asset: asset)
             imageGenerator.appliesPreferredTrackTransform = true
-            let cgImage = try imageGenerator.copyCGImage(at: .zero, actualTime: nil)
-            let thumbnail = UIImage(cgImage: cgImage)
+            let image = try await imageGenerator.image(at: .zero)
+            let thumbnail = UIImage(cgImage: image.image)
 
             // Create new clip
             var clip = VideoClip(asset: asset, thumbnail: thumbnail)
             clip.endTime = duration.seconds
 
             // Add to clips array
-            clips.append(clip)
-            selectedClipIndex = clips.count - 1
+            await MainActor.run {
+                clips.append(clip)
+                selectedClipIndex = clips.count - 1
+            }
 
             // Setup player with combined clips
             try await setupPlayerWithComposition()
@@ -177,16 +191,46 @@ class VideoEditViewModel: ObservableObject {
         playerItem.videoComposition = videoComposition
         self.playerItem = playerItem
 
+        // Create temporary URL for export
+        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "\(UUID().uuidString).mp4")
+
+        // Use AVAssetExportSession for export
+        guard let exportSession = AVAssetExportSession(
+            asset: composition,
+            presetName: AVAssetExportPresetHighestQuality
+        ) else {
+            throw NSError(
+                domain: "", code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to create export session"]
+            )
+        }
+
+        exportSession.outputURL = outputURL
+        exportSession.outputFileType = .mp4
+        exportSession.videoComposition = videoComposition
+
+        // Export the video
+        await exportSession.export()
+        
+        if let error = exportSession.error {
+            throw error
+        }
+            
+        // Update total duration
+        self._totalDuration = try await composition.load(.duration).seconds
+        
         // Create and configure player
-        let player = AVPlayer(playerItem: playerItem)
-        _player = player
-
-        // Add time observer
+        let player = AVPlayer(playerItem: AVPlayerItem(asset: composition))
+        await MainActor.run {
+            self._player = player
+        }
+        
+        // Add time observer on main actor
         let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-        timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) {
-            [weak self] time in
+        timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self else { return }
-
+            
             let currentTime = time.seconds
             if currentTime >= self.totalDuration {
                 Task { @MainActor in
@@ -195,7 +239,7 @@ class VideoEditViewModel: ObservableObject {
                 }
             }
         }
-
+        
         // Set initial volume
         updatePlayerVolume()
     }
@@ -474,47 +518,42 @@ class VideoEditViewModel: ObservableObject {
                     let imageGenerator = AVAssetImageGenerator(asset: clip.asset)
                     imageGenerator.appliesPreferredTrackTransform = true
 
-                    // Generate thumbnail for first half at its midpoint
+                    // Generate thumbnail for first half at its midpoint using new async API
                     let firstHalfMidpoint = CMTime(
                         seconds: (firstHalf.startTime + firstHalf.endTime) / 2,
                         preferredTimescale: 600
                     )
-                    let firstHalfImage = try imageGenerator.copyCGImage(
-                        at: firstHalfMidpoint, actualTime: nil
-                    )
-                    firstHalf.thumbnail = UIImage(cgImage: firstHalfImage)
+                    let firstHalfImageResult = try await imageGenerator.image(at: firstHalfMidpoint)
+                    firstHalf.thumbnail = UIImage(cgImage: firstHalfImageResult.image)
 
                     // Generate thumbnail for second half at its midpoint
                     let secondHalfMidpoint = CMTime(
                         seconds: (secondHalf.startTime + secondHalf.endTime) / 2,
                         preferredTimescale: 600
                     )
-                    let secondHalfImage = try imageGenerator.copyCGImage(
-                        at: secondHalfMidpoint, actualTime: nil
-                    )
-                    secondHalf.thumbnail = UIImage(cgImage: secondHalfImage)
+                    let secondHalfImageResult = try await imageGenerator.image(at: secondHalfMidpoint)
+                    secondHalf.thumbnail = UIImage(cgImage: secondHalfImageResult.image)
+
+                    // Update clips on main actor
+                    await MainActor.run {
+                        clips.remove(at: index)
+                        clips.insert(secondHalf, at: index)
+                        clips.insert(firstHalf, at: index)
+
+                        if selectedClipIndex == index {
+                            selectedClipIndex = index
+                        } else if let selected = selectedClipIndex, selected > index {
+                            selectedClipIndex = selected + 1
+                        }
+                    }
+
+                    // Update player with new clips
+                    try await setupPlayerWithComposition()
+                    return
                 } catch {
                     print("Error generating thumbnails for split clips: \(error)")
-                    // If we fail to generate new thumbnails, use the original for both
-                    firstHalf.thumbnail = clip.thumbnail
-                    secondHalf.thumbnail = clip.thumbnail
+                    // Handle error appropriately
                 }
-
-                // Replace the original clip with the two new ones
-                clips.remove(at: index)
-                clips.insert(secondHalf, at: index)
-                clips.insert(firstHalf, at: index)
-
-                // Update selected clip index if needed
-                if selectedClipIndex == index {
-                    selectedClipIndex = index // Select first half
-                } else if selectedClipIndex != nil && selectedClipIndex! > index {
-                    selectedClipIndex! += 1 // Shift selection for clips after the split
-                }
-
-                // Update player with new clips
-                try? await setupPlayerWithComposition()
-                return
             }
 
             accumulatedTime += clipDuration
@@ -522,44 +561,40 @@ class VideoEditViewModel: ObservableObject {
     }
 }
 
-// Custom video compositor for applying filters
-class VideoCompositor: NSObject, AVVideoCompositing {
-    let renderContext = CIContext()
-    let colorSpace = CGColorSpaceCreateDeviceRGB()
-
+// Make VideoCompositor conform to Sendable
+@objc final class VideoCompositor: NSObject, AVVideoCompositing, @unchecked Sendable {
+    private let renderContext = CIContext()
+    private let colorSpace = CGColorSpaceCreateDeviceRGB()
+    
     func renderContextChanged(_: AVVideoCompositionRenderContext) {}
-
+    
     func cancelAllPendingVideoCompositionRequests() {}
-
+    
     var sourcePixelBufferAttributes: [String: Any]? {
-        return [
+        [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
             kCVPixelBufferMetalCompatibilityKey as String: true,
         ]
     }
-
+    
     var requiredPixelBufferAttributesForRenderContext: [String: Any] {
-        return [
+        [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
             kCVPixelBufferMetalCompatibilityKey as String: true,
         ]
     }
-
+    
     func startRequest(_ request: AVAsynchronousVideoCompositionRequest) {
         guard let sourceBuffer = request.sourceFrame(byTrackID: request.sourceTrackIDs[0].int32Value),
-              let instruction = request.videoCompositionInstruction
-              as? AVVideoCompositionInstructionProtocol,
               let destinationBuffer = request.renderContext.newPixelBuffer()
         else {
             request.finish(with: NSError(domain: "VideoCompositor", code: -1, userInfo: nil))
             return
         }
-
+        
         let sourceImage = CIImage(cvPixelBuffer: sourceBuffer)
-
-        // Apply filters here if needed
         let outputImage = sourceImage
-
+        
         renderContext.render(outputImage, to: destinationBuffer)
         request.finish(withComposedVideoFrame: destinationBuffer)
     }
