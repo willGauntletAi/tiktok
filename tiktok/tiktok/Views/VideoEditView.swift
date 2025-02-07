@@ -255,9 +255,9 @@ struct VideoEditView: View {
 
                 // Action buttons
                 ZStack {
-                    VStack(spacing: 8) {
+                    HStack(spacing: 12) {
                         // Camera button
-                        Button("Record Video") {
+                        Button("Record") {
                             print("Camera button tapped")
                             showCamera = true
                         }
@@ -271,8 +271,7 @@ struct VideoEditView: View {
                             matching: .videos,
                             photoLibrary: .shared()
                         ) {
-                            Text(isAddingClip ? "Adding Clip..." : "Add from Library")
-                                .frame(maxWidth: .infinity)
+                            Text(isAddingClip ? "Adding..." : "Add Clip")
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
@@ -280,7 +279,7 @@ struct VideoEditView: View {
 
                         // Split button
                         if !viewModel.clips.isEmpty {
-                            Button("Split at Current Position") {
+                            Button("Split") {
                                 print("Split button tapped at position: \(viewModel.currentPosition)")
                                 Task { @MainActor in
                                     print("Starting split operation...")
