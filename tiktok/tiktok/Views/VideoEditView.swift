@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct VideoPicker: UIViewControllerRepresentable {
     @Binding var isPresented: Bool
+    @Binding var isAddingClip: Bool
     let onVideoSelected: (URL) -> Void
     
     func makeUIViewController(context: Context) -> PHPickerViewController {
@@ -32,16 +33,35 @@ struct VideoPicker: UIViewControllerRepresentable {
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             parent.isPresented = false
             
-            guard let provider = results.first?.itemProvider else { return }
+            guard let provider = results.first?.itemProvider else {
+                // If no video was selected, reset the isAddingClip state
+                DispatchQueue.main.async {
+                    self.parent.isAddingClip = false
+                }
+                return
+            }
+            
+            // Set isAddingClip to true as soon as a video is selected
+            DispatchQueue.main.async {
+                self.parent.isAddingClip = true
+            }
             
             if provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
                 provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, error in
                     if let error = error {
                         print("Error loading video: \(error.localizedDescription)")
+                        DispatchQueue.main.async {
+                            self.parent.isAddingClip = false
+                        }
                         return
                     }
                     
-                    guard let url = url else { return }
+                    guard let url = url else {
+                        DispatchQueue.main.async {
+                            self.parent.isAddingClip = false
+                        }
+                        return
+                    }
                     
                     // Create a temporary copy of the video file
                     let tempURL = FileManager.default.temporaryDirectory
@@ -57,6 +77,9 @@ struct VideoPicker: UIViewControllerRepresentable {
                         }
                     } catch {
                         print("Error copying video: \(error.localizedDescription)")
+                        DispatchQueue.main.async {
+                            self.parent.isAddingClip = false
+                        }
                     }
                 }
             }
@@ -403,19 +426,15 @@ struct VideoEditView: View {
             Text(viewModel.errorMessage ?? "Failed to export video")
         }
         .sheet(isPresented: $showVideoPicker) {
-            VideoPicker(isPresented: $showVideoPicker) { url in
-                Task {
-                    isAddingClip = true
-                    print("isAddingClip set to true")
+            VideoPicker(isPresented: $showVideoPicker, isAddingClip: $isAddingClip) { url in
+                Task { @MainActor in
                     do {
                         try await viewModel.addClip(from: url)
-                        print("Successfully added clip")
+                        isAddingClip = false
                     } catch {
                         print("Error adding clip: \(error.localizedDescription)")
-                        print("Error details: \(error)")
+                        isAddingClip = false
                     }
-                    isAddingClip = false
-                    print("isAddingClip set to false")
                 }
             }
         }
