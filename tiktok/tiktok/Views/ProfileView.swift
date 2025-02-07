@@ -7,62 +7,64 @@ struct ProfileView: View {
     @EnvironmentObject private var navigator: Navigator
 
     init(userId: String? = nil) {
-        _viewModel = StateObject(wrappedValue: ProfileViewModel(userId: userId))
+        self._viewModel = StateObject(wrappedValue: ProfileViewModel(userId: userId))
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Profile Header
-                if let user = viewModel.user {
-                    ProfileHeaderView(user: user)
-                        .onTapGesture {
-                            // Only show follow button if this is not the current user's profile
-                            if viewModel.userId != nil {
-                                // TODO: Implement follow functionality
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Profile Header
+                    if let user = viewModel.user {
+                        ProfileHeaderView(user: user)
+                            .onTapGesture {
+                                // Only show follow button if this is not the current user's profile
+                                if viewModel.userId != nil {
+                                    // TODO: Implement follow functionality
+                                }
                             }
-                        }
-                }
-
-                // Content Tabs
-                VStack(spacing: 0) {
-                    // Tab Buttons
-                    HStack(spacing: 0) {
-                        TabButton(title: "My Videos", isSelected: selectedTab == 0) {
-                            selectedTab = 0
-                        }
-                        TabButton(title: "Liked", isSelected: selectedTab == 1) {
-                            selectedTab = 1
-                        }
                     }
 
-                    // Tab Content
-                    if selectedTab == 0 {
-                        if viewModel.userVideos.isEmpty {
-                            Text("No videos yet")
-                                .foregroundColor(.gray)
-                                .padding()
-                        } else {
-                            VideoGridView(videos: viewModel.userVideos)
-                                .frame(minHeight: 200)
+                    // Content Tabs
+                    VStack(spacing: 0) {
+                        // Tab Buttons
+                        HStack(spacing: 0) {
+                            TabButton(title: "My Videos", isSelected: selectedTab == 0) {
+                                selectedTab = 0
+                            }
+                            TabButton(title: "Liked", isSelected: selectedTab == 1) {
+                                selectedTab = 1
+                            }
                         }
-                    } else {
-                        if viewModel.likedVideos.isEmpty {
-                            Text("No liked videos")
-                                .foregroundColor(.gray)
-                                .padding()
+
+                        // Tab Content
+                        if selectedTab == 0 {
+                            if viewModel.userVideos.isEmpty {
+                                Text("No videos yet")
+                                    .foregroundColor(.gray)
+                                    .padding()
+                            } else {
+                                VideoGridView(videos: viewModel.userVideos)
+                                    .frame(minHeight: 200)
+                            }
                         } else {
-                            VideoGridView(videos: viewModel.likedVideos)
-                                .frame(minHeight: 200)
+                            if viewModel.likedVideos.isEmpty {
+                                Text("No liked videos")
+                                    .foregroundColor(.gray)
+                                    .padding()
+                            } else {
+                                VideoGridView(videos: viewModel.likedVideos)
+                                    .frame(minHeight: 200)
+                            }
                         }
                     }
                 }
             }
-            .navigationTitle(
-                viewModel.userId == nil ? "Profile" : "@\(viewModel.user?.displayName ?? "")"
-            )
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(viewModel.userId == nil ? "Profile" : "@\(viewModel.user?.displayName ?? "")")
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar(.visible, for: .navigationBar)
             .toolbar {
-                // Only show settings menu for current user's profile
                 if viewModel.userId == nil {
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Menu {
@@ -74,6 +76,8 @@ struct ProfileView: View {
                             }
                         } label: {
                             Image(systemName: "gearshape.fill")
+                                .foregroundColor(.primary)
+                                .imageScale(.large)
                         }
                     }
                 }
@@ -93,10 +97,20 @@ struct ProfileView: View {
             } message: {
                 Text(viewModel.error ?? "")
             }
-        }
-        .task {
-            print("🎬 ProfileView: Fetching user profile")
-            await viewModel.fetchUserProfile()
+            .task {
+                print("🎬 ProfileView: Task started")
+                print("🎬 ProfileView: userId = \(String(describing: viewModel.userId))")
+                print("🎬 ProfileView: currentUser = \(String(describing: Auth.auth().currentUser?.uid))")
+                await viewModel.fetchUserProfile()
+            }
+            .onAppear {
+                print("🔍 ProfileView: View appeared")
+                print("🔍 ProfileView: userId = \(String(describing: viewModel.userId))")
+                print("🔍 ProfileView: currentUser = \(String(describing: Auth.auth().currentUser?.uid))")
+                if let user = viewModel.user {
+                    print("🔍 ProfileView: user loaded - \(user.displayName) (ID: \(user.id))")
+                }
+            }
         }
     }
 }
