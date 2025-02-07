@@ -5,7 +5,6 @@ import SwiftUI
 struct VideoTimelineView: View {
     @ObservedObject var viewModel: VideoEditViewModel
     @Binding var currentPosition: Double
-    @State private var selectedItem: PhotosPickerItem?
     @State private var showingDeleteAlert = false
     @State private var clipToDelete: Int?
     @State private var isLoadingThumbnails = true
@@ -13,9 +12,6 @@ struct VideoTimelineView: View {
     @State private var isDragging = false
     @State private var dragPosition: Double = 0
     @State private var seekTask: Task<Void, Never>?
-    @State private var isAddingClip = false
-    @State private var showCamera = false
-    @StateObject private var cameraViewModel = CreateExerciseViewModel()
 
     private let thumbnailHeight: CGFloat = 60
     private let positionIndicatorWidth: CGFloat = 2
@@ -23,79 +19,14 @@ struct VideoTimelineView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            // Add clip buttons
-            HStack {
-                // Camera button
-                Button(action: { showCamera = true }) {
-                    Label("Record", systemImage: "camera")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(Color.green)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
-                }
-                .disabled(isAddingClip)
-
-                // Library button
-                PhotosPicker(
-                    selection: $selectedItem,
-                    matching: .videos
-                ) {
-                    Label(
-                        isAddingClip ? "Adding Clip..." : "Add Clip", systemImage: isAddingClip ? "" : "plus"
-                    )
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(isAddingClip ? Color.gray : Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(8)
-                }
-                .disabled(isAddingClip)
-
-                if !viewModel.clips.isEmpty {
-                    Button(action: {
-                        Task {
-                            await viewModel.splitClip(at: currentPosition)
-                        }
-                    }) {
-                        Label("Split", systemImage: "scissors")
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(Color.orange)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
-                    }
-                    .disabled(
-                        currentPosition <= 0 || currentPosition >= viewModel.totalDuration || isAddingClip)
-                }
-            }
-            .padding(.horizontal)
-
             if !viewModel.clips.isEmpty {
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
-                        // Timeline background and gesture detector
+                        // Timeline background
                         Rectangle()
                             .fill(Color.black.opacity(0.2))
                             .frame(height: thumbnailHeight)
-                            .contentShape(Rectangle()) // Make entire area tappable
-                            .gesture(
-                                DragGesture(minimumDistance: 0)
-                                    .onChanged { value in
-                                        isDragging = true
-                                        let progress = max(0, min(1, value.location.x / geometry.size.width))
-                                        dragPosition = progress * viewModel.totalDuration
-                                        debouncedSeek(to: dragPosition)
-                                    }
-                                    .onEnded { value in
-                                        let progress = max(0, min(1, value.location.x / geometry.size.width))
-                                        let time = progress * viewModel.totalDuration
-                                        currentPosition = time
-                                        seekToTime(time)
-                                        isDragging = false
-                                    }
-                            )
-
+                        
                         // Clips thumbnails
                         HStack(spacing: 0) {
                             ForEach(Array(viewModel.clips.enumerated()), id: \.element.id) { index, clip in
@@ -119,30 +50,34 @@ struct VideoTimelineView: View {
                                             .onTapGesture {
                                                 viewModel.selectedClipIndex = index
                                             }
-                                            .allowsHitTesting(false) // Let gestures pass through thumbnails
-
-                                        // Delete button
-                                        VStack {
-                                            Button(action: {
-                                                clipToDelete = index
-                                                showingDeleteAlert = true
-                                            }) {
-                                                Image(systemName: "xmark.circle.fill")
-                                                    .foregroundColor(.red)
-                                                    .background(Circle().fill(Color.white))
-                                                    .padding(4)
-                                            }
-                                            .zIndex(2) // Ensure button appears above everything
-
-                                            Spacer()
-                                        }
-                                        .frame(maxWidth: .infinity, alignment: .trailing)
+                                    } else {
+                                        Rectangle()
+                                            .fill(Color.gray.opacity(0.3))
+                                            .frame(
+                                                width: clipWidth(for: clip, in: geometry.size.width),
+                                                height: thumbnailHeight
+                                            )
                                     }
 
-                                    // Add swap button if this isn't the last clip and has non-zero width
-                                    if index < viewModel.clips.count - 1
-                                        && clipWidth(for: clip, in: geometry.size.width) > 0
-                                    {
+                                    // Delete button
+                                    VStack {
+                                        Button(action: {
+                                            clipToDelete = index
+                                            showingDeleteAlert = true
+                                        }) {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundColor(.red)
+                                                .background(Circle().fill(Color.white))
+                                                .padding(4)
+                                        }
+                                        .zIndex(2)
+
+                                        Spacer()
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
+
+                                    // Add swap button if this isn't the last clip
+                                    if index < viewModel.clips.count - 1 {
                                         Button(action: {
                                             viewModel.swapClips(at: index)
                                         }) {
@@ -152,12 +87,11 @@ struct VideoTimelineView: View {
                                                 .foregroundColor(.white)
                                         }
                                         .offset(x: swapButtonSize / 2)
-                                        .zIndex(2) // Ensure button appears above everything
+                                        .zIndex(2)
                                     }
                                 }
                             }
                         }
-                        .allowsHitTesting(true) // Allow interaction with buttons
 
                         // Position indicator
                         Rectangle()
@@ -171,7 +105,28 @@ struct VideoTimelineView: View {
                                 y: -10
                             )
                             .shadow(radius: 2)
-                            .allowsHitTesting(false) // Let gestures pass through
+                        
+                        // Gesture overlay - place last to capture gestures
+                        Rectangle()
+                            .fill(Color.clear)
+                            .frame(height: thumbnailHeight)
+                            .contentShape(Rectangle())
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { value in
+                                        isDragging = true
+                                        let progress = max(0, min(1, value.location.x / geometry.size.width))
+                                        dragPosition = progress * viewModel.totalDuration
+                                        debouncedSeek(to: dragPosition)
+                                    }
+                                    .onEnded { value in
+                                        let progress = max(0, min(1, value.location.x / geometry.size.width))
+                                        let time = progress * viewModel.totalDuration
+                                        currentPosition = time
+                                        seekToTime(time)
+                                        isDragging = false
+                                    }
+                            )
                     }
                 }
                 .frame(height: thumbnailHeight)
@@ -188,103 +143,10 @@ struct VideoTimelineView: View {
             }
         }
         .onAppear {
-            // Start timer to update position
             startPositionTimer()
         }
         .onDisappear {
             seekTask?.cancel()
-        }
-        .onChange(of: selectedItem) { oldValue, newValue in
-            if let item = newValue {
-                Task {
-                    isAddingClip = true
-                    do {
-                        if let data = try? await item.loadTransferable(type: Data.self) {
-                            let tempURL = FileManager.default.temporaryDirectory
-                                .appendingPathComponent(UUID().uuidString)
-                                .appendingPathExtension("mov")
-
-                            try? data.write(to: tempURL)
-                            try await viewModel.addClip(from: tempURL)
-                        }
-                    } catch {
-                        print("Error adding clip: \(error)")
-                    }
-                    selectedItem = nil
-                    isAddingClip = false
-                }
-            }
-        }
-        .fullScreenCover(isPresented: $showCamera) {
-            ZStack {
-                if let currentFrame = cameraViewModel.currentFrame {
-                    Image(currentFrame, scale: 1.0, label: Text("Camera Preview"))
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .ignoresSafeArea()
-                }
-
-                VStack {
-                    Spacer()
-
-                    HStack(spacing: 30) {
-                        Spacer()
-
-                        // Record button
-                        Button(action: {
-                            if cameraViewModel.isRecording {
-                                cameraViewModel.stopRecording()
-                            } else {
-                                cameraViewModel.startRecording()
-                            }
-                        }) {
-                            ZStack {
-                                Circle()
-                                    .strokeBorder(Color.white, lineWidth: 3)
-                                    .frame(width: 72, height: 72)
-
-                                Circle()
-                                    .fill(cameraViewModel.isRecording ? Color.red : Color.white)
-                                    .frame(width: 60, height: 60)
-                            }
-                        }
-
-                        // Cancel button
-                        Button(action: { showCamera = false }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 30))
-                                .foregroundColor(.white)
-                        }
-
-                        Spacer()
-                    }
-                    .padding(.bottom, 30)
-                }
-            }
-            .onAppear {
-                Task {
-                    do {
-                        try await cameraViewModel.configureAndStartCaptureSession()
-                    } catch {
-                        print("Error setting up camera: \(error)")
-                    }
-                }
-            }
-            .onChange(of: cameraViewModel.videoData) { oldValue, newValue in
-                if let data = newValue {
-                    Task {
-                        isAddingClip = true
-                        let tempURL = FileManager.default.temporaryDirectory
-                            .appendingPathComponent(UUID().uuidString)
-                            .appendingPathExtension("mov")
-
-                        try? data.write(to: tempURL)
-                        try await viewModel.addClip(from: tempURL)
-                        showCamera = false
-                        isAddingClip = false
-                    }
-                }
-            }
         }
         .alert("Delete Clip", isPresented: $showingDeleteAlert) {
             Button("Delete", role: .destructive) {
@@ -299,36 +161,49 @@ struct VideoTimelineView: View {
     }
 
     private func debouncedSeek(to time: Double) {
-        // Cancel any existing seek task
+        // Cancel existing seek task
         seekTask?.cancel()
+        seekTask = nil
 
-        // Create a new task that waits briefly before seeking
-        seekTask = Task {
-            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms delay
-
-            if !Task.isCancelled {
-                await MainActor.run {
+        // Create new task with shorter delay
+        seekTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: 50_000_000) // 50ms delay
+                if !Task.isCancelled {
                     seekToTime(time)
                 }
+            } catch {
+                // Task was cancelled
             }
         }
     }
 
     private func startPositionTimer() {
         // Create a timer that updates every 1/30th of a second
-        Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { timer in
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [self] timer in
+            guard !isDragging,
+                  let player = viewModel.player else { return }
+            
             Task { @MainActor in
-                if !isDragging, let player = viewModel.player {
-                    currentPosition = player.currentTime().seconds
-                }
+                currentPosition = player.currentTime().seconds
             }
         }
+        
+        // Make sure timer continues to fire when scrolling
+        RunLoop.current.add(timer, forMode: .common)
     }
 
     private func seekToTime(_ time: Double) {
         guard let player = viewModel.player else { return }
+        let targetTime = CMTime(seconds: time, preferredTimescale: 600)
+        
         Task {
-            await player.seek(to: CMTime(seconds: time, preferredTimescale: 600))
+            // Seek using more precise tolerances for better accuracy
+            await player.seek(
+                to: targetTime,
+                toleranceBefore: .zero,
+                toleranceAfter: .zero
+            )
         }
     }
 
@@ -336,7 +211,9 @@ struct VideoTimelineView: View {
         let clipDuration = clip.endTime - clip.startTime
         let totalDuration = viewModel.totalDuration
         guard totalDuration > 0 else { return 0 }
-        return max(0, totalWidth * CGFloat(clipDuration / totalDuration))
+        
+        // Calculate proportional width based on duration
+        return totalWidth * CGFloat(clipDuration / totalDuration)
     }
 
     private func timeString(from seconds: Double) -> String {
@@ -349,6 +226,9 @@ struct VideoTimelineView: View {
 struct VideoEditView: View {
     @StateObject private var viewModel = VideoEditViewModel()
     @State private var showingExportError = false
+    @State private var selectedItem: PhotosPickerItem?
+    @State private var isAddingClip = false
+    @State private var showCamera = false
     @Environment(\.dismiss) private var dismiss
     var onVideoEdited: ((URL) -> Void)?
 
@@ -369,11 +249,13 @@ struct VideoEditView: View {
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
                         .onAppear {
-                            player.play() // Start playing when view appears
+                            player.play()
                         }
                         .onDisappear {
-                            player.pause() // Pause when view disappears
+                            player.pause()
                         }
+                        .allowsHitTesting(true)
+                        .zIndex(0)
                 } else {
                     // Initial state - show clips list
                     Text("Add clips to start editing")
@@ -384,6 +266,53 @@ struct VideoEditView: View {
                         .background(Color.gray.opacity(0.1))
                         .cornerRadius(12)
                 }
+
+                // Action buttons
+                ZStack {
+                    VStack(spacing: 8) {
+                        // Camera button
+                        Button("Record Video") {
+                            print("Camera button tapped")
+                            showCamera = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                        .disabled(isAddingClip)
+
+                        // Library button
+                        PhotosPicker(
+                            selection: $selectedItem,
+                            matching: .videos,
+                            photoLibrary: .shared()
+                        ) {
+                            Text(isAddingClip ? "Adding Clip..." : "Add from Library")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                        .disabled(isAddingClip || viewModel.isProcessing)
+
+                        // Split button
+                        if !viewModel.clips.isEmpty {
+                            Button("Split at Current Position") {
+                                print("Split button tapped at position: \(viewModel.currentPosition)")
+                                Task { @MainActor in
+                                    print("Starting split operation...")
+                                    await viewModel.splitClip(at: viewModel.currentPosition)
+                                    print("Split operation completed")
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.orange)
+                            .disabled(viewModel.currentPosition <= 0 || 
+                                     viewModel.currentPosition >= viewModel.totalDuration || 
+                                     isAddingClip || 
+                                     viewModel.isProcessing)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+                .zIndex(2)
 
                 // Timeline with position indicator
                 VideoTimelineView(viewModel: viewModel, currentPosition: $viewModel.currentPosition)
@@ -425,6 +354,41 @@ struct VideoEditView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(viewModel.errorMessage ?? "Failed to export video")
+        }
+        .onChange(of: selectedItem) { oldValue, newValue in
+            if let item = newValue {
+                print("Starting to process selected item")
+                Task {
+                    isAddingClip = true
+                    print("isAddingClip set to true")
+                    do {
+                        if let data = try await item.loadTransferable(type: Data.self) {
+                            print("Successfully loaded transferable data")
+                            let tempURL = FileManager.default.temporaryDirectory
+                                .appendingPathComponent(UUID().uuidString)
+                                .appendingPathExtension("mov")
+
+                            do {
+                                try data.write(to: tempURL)
+                                print("Successfully wrote data to temp file: \(tempURL)")
+                                try await viewModel.addClip(from: tempURL)
+                                print("Successfully added clip to viewModel")
+                            } catch {
+                                print("Error adding clip: \(error.localizedDescription)")
+                                print("Error details: \(error)")
+                            }
+                        } else {
+                            print("Failed to load transferable data")
+                        }
+                    } catch {
+                        print("Error loading transferable: \(error.localizedDescription)")
+                        print("Error details: \(error)")
+                    }
+                    selectedItem = nil
+                    isAddingClip = false
+                    print("Finished processing selected item, isAddingClip set to false")
+                }
+            }
         }
     }
 }

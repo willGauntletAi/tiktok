@@ -8,7 +8,7 @@ struct VideoClipsListView: View {
     @State private var clipToDelete: Int?
 
     var body: some View {
-        VStack(spacing: 12) {
+        HStack(spacing: 12) {
             // Add clip button
             PhotosPicker(
                 selection: $selectedItem,

@@ -54,190 +54,171 @@ class VideoEditViewModel: ObservableObject {
         set { _totalDuration = newValue }
     }
 
+    private var composition: AVMutableComposition?
+
     func addClip(from url: URL) async throws {
-        isProcessing = true
-        defer { isProcessing = false }
+        print("Starting addClip operation from URL: \(url)")
+        await MainActor.run {
+            isProcessing = true
+            print("Set isProcessing to true")
+        }
+        
+        defer {
+            Task { @MainActor in
+                isProcessing = false
+                print("Set isProcessing to false")
+            }
+        }
 
         do {
             let asset = AVURLAsset(url: url)
+            print("Created AVURLAsset")
 
-            // Get video duration
-            let duration = try await asset.load(.duration)
-
-            // Generate thumbnail using new async API
+            // Create composition if needed
+            if composition == nil {
+                composition = AVMutableComposition()
+                print("Created new composition")
+            }
+            
+            guard let composition = composition else {
+                print("Failed to get composition")
+                throw VideoError.compositionCreationFailed
+            }
+            
+            // Generate thumbnail
+            print("Starting thumbnail generation")
             let imageGenerator = AVAssetImageGenerator(asset: asset)
             imageGenerator.appliesPreferredTrackTransform = true
-            let image = try await imageGenerator.image(at: .zero)
+            imageGenerator.maximumSize = CGSize(width: 200, height: 200)
+            imageGenerator.requestedTimeToleranceBefore = .zero
+            imageGenerator.requestedTimeToleranceAfter = .zero
+            
+            let time = CMTime(seconds: 0.03, preferredTimescale: 600)
+            let image = try await imageGenerator.image(at: time)
             let thumbnail = UIImage(cgImage: image.image)
-
-            // Create new clip
-            var clip = VideoClip(asset: asset, thumbnail: thumbnail)
-            clip.endTime = duration.seconds
-
-            // Add to clips array
+            print("Successfully generated thumbnail")
+            
+            // Insert video track
+            print("Loading video tracks")
+            let videoTracks = try await asset.loadTracks(withMediaType: .video)
+            guard let videoTrack = videoTracks.first else {
+                print("No video track found")
+                throw VideoError.noVideoTrack
+            }
+            
+            print("Creating composition video track")
+            guard let compositionVideoTrack = composition.addMutableTrack(
+                withMediaType: .video,
+                preferredTrackID: kCMPersistentTrackID_Invalid
+            ) else {
+                print("Failed to create composition video track")
+                throw VideoError.trackCreationFailed
+            }
+            
+            let timeRange = try await videoTrack.load(.timeRange)
+            let insertTime = composition.duration
+            print("Inserting video track at time: \(insertTime.seconds)")
+            try compositionVideoTrack.insertTimeRange(
+                timeRange,
+                of: videoTrack,
+                at: insertTime
+            )
+            
+            // Insert audio track if available
+            print("Loading audio tracks")
+            let audioTracks = try? await asset.loadTracks(withMediaType: .audio)
+            if let audioTrack = audioTracks?.first {
+                print("Found audio track, creating composition audio track")
+                guard let compositionAudioTrack = composition.addMutableTrack(
+                    withMediaType: .audio,
+                    preferredTrackID: kCMPersistentTrackID_Invalid
+                ) else {
+                    print("Failed to create composition audio track")
+                    throw VideoError.trackCreationFailed
+                }
+                
+                print("Inserting audio track")
+                try compositionAudioTrack.insertTimeRange(
+                    timeRange,
+                    of: audioTrack,
+                    at: insertTime
+                )
+            }
+            
+            // Create clip model with correct time range
+            let clip = VideoClip(
+                asset: asset,
+                startTime: insertTime.seconds,
+                endTime: (insertTime + timeRange.duration).seconds,
+                thumbnail: thumbnail
+            )
+            print("Created clip model with duration: \(timeRange.duration.seconds)")
+            
+            // Update UI
             await MainActor.run {
+                print("Updating UI")
                 clips.append(clip)
                 selectedClipIndex = clips.count - 1
+                totalDuration = composition.duration.seconds
+                print("Total duration updated to: \(totalDuration)")
+                updatePlayer()
             }
-
-            // Setup player with combined clips
-            try await setupPlayerWithComposition()
-
+            
+            print("Successfully completed addClip operation")
         } catch {
+            print("Error in addClip: \(error.localizedDescription)")
+            print("Error details: \(error)")
             throw error
         }
     }
 
-    private func setupPlayerWithComposition() async throws {
-        // Remove existing time observer
-        if let timeObserver = timeObserver {
-            _player?.removeTimeObserver(timeObserver)
-            self.timeObserver = nil
-        }
-
-        guard !clips.isEmpty else { return }
-
-        // Create composition
-        let composition = AVMutableComposition()
-        let videoComposition = AVMutableVideoComposition()
-
-        // Create composition tracks
-        guard
-            let compositionVideoTrack = composition.addMutableTrack(
-                withMediaType: .video,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            ),
-            let compositionAudioTrack = composition.addMutableTrack(
-                withMediaType: .audio,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            )
-        else {
-            throw NSError(
-                domain: "", code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to create composition tracks"]
-            )
-        }
-
-        var currentTime = CMTime.zero
-        var instructions: [AVMutableVideoCompositionInstruction] = []
-
-        // Process each clip
-        for clip in clips {
-            do {
-                // Load tracks for current clip
-                let videoTrack = try await clip.asset.loadTracks(withMediaType: .video).first
-                let audioTrack = try await clip.asset.loadTracks(withMediaType: .audio).first
-
-                guard let videoTrack = videoTrack, let audioTrack = audioTrack else { continue }
-
-                // Calculate time range for the clip
-                let timeRange = CMTimeRange(
-                    start: CMTime(seconds: clip.startTime, preferredTimescale: 600),
-                    end: CMTime(seconds: clip.endTime, preferredTimescale: 600)
-                )
-                let clipDuration = timeRange.duration
-
-                // Insert tracks into composition
-                try compositionVideoTrack.insertTimeRange(timeRange, of: videoTrack, at: currentTime)
-                try compositionAudioTrack.insertTimeRange(timeRange, of: audioTrack, at: currentTime)
-
-                // Create instruction for this clip
-                let instruction = AVMutableVideoCompositionInstruction()
-                instruction.timeRange = CMTimeRange(start: currentTime, duration: clipDuration)
-
-                // Get and apply the original transform
-                let originalTransform = try await videoTrack.load(.preferredTransform)
-
-                let layerInstruction = AVMutableVideoCompositionLayerInstruction(
-                    assetTrack: compositionVideoTrack)
-                layerInstruction.setTransform(originalTransform, at: currentTime)
-                instruction.layerInstructions = [layerInstruction]
-                instructions.append(instruction)
-
-                // Update current time for next clip
-                currentTime = CMTimeAdd(currentTime, clipDuration)
-            } catch {
-                print("Error processing clip: \(error)")
-                continue
-            }
-        }
-
-        // Setup video composition
-        if let firstClip = clips.first,
-           let videoTrack = try? await firstClip.asset.loadTracks(withMediaType: .video).first
-        {
-            let naturalSize = try await videoTrack.load(.naturalSize)
-            let transform = try await videoTrack.load(.preferredTransform)
-
-            let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
-            let renderWidth = isVideoPortrait ? naturalSize.height : naturalSize.width
-            let renderHeight = isVideoPortrait ? naturalSize.width : naturalSize.height
-
-            videoComposition.renderSize = CGSize(width: renderWidth, height: renderHeight)
-            videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
-            videoComposition.instructions = instructions
-        }
-
-        // Create player item with composition
-        let playerItem = AVPlayerItem(asset: composition)
-        playerItem.videoComposition = videoComposition
-        self.playerItem = playerItem
-
-        // Create temporary URL for export
-        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(
-            "\(UUID().uuidString).mp4")
-
-        // Use AVAssetExportSession for export
-        guard let exportSession = AVAssetExportSession(
-            asset: composition,
-            presetName: AVAssetExportPresetHighestQuality
-        ) else {
-            throw NSError(
-                domain: "", code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to create export session"]
-            )
-        }
-
-        await MainActor.run {
-            exportSession.outputURL = outputURL
-            exportSession.outputFileType = .mp4
-            exportSession.videoComposition = videoComposition
-        }
-
-        // Export the video using new async API
-        try await exportSession.export(to: outputURL, as: .mp4)
+    private func updatePlayer() {
+        guard let composition = composition else { return }
+        
+        Task { @MainActor in
+            // Create player item with composition
+            let playerItem = AVPlayerItem(asset: composition)
             
-        // Update total duration
-        let duration = try await composition.load(.duration).seconds
-        self._totalDuration = duration
+            // Create or update player
+            if let player = player {
+                player.pause()
+                player.replaceCurrentItem(with: playerItem)
+            } else {
+                player = AVPlayer(playerItem: playerItem)
+            }
+            
+            // Setup time observer only once when creating new player
+            if timeObserver == nil {
+                setupTimeObserver()
+            }
+            
+            // Set initial playback rate and volume
+            player?.rate = 1.0
+            player?.volume = 1.0
+            player?.play()
+        }
+    }
+    
+    private func setupTimeObserver() {
+        guard let player = player, timeObserver == nil else { return }
         
-        // Create and configure player
-        let player = AVPlayer(playerItem: AVPlayerItem(asset: composition))
-        self._player = player
-        
-        // Add time observer
-        let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-        let totalDurationCopy = self.totalDuration
+        // Add new time observer with optimized interval
+        let interval = CMTime(value: 1, timescale: 30) // Update 30 times per second
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self else { return }
-            
-            let currentTime = time.seconds
-            if currentTime >= totalDurationCopy {
-                Task { @MainActor in
-                    await player.seek(to: .zero)
-                    player.play()
-                }
-            }
+            self.currentPosition = time.seconds
         }
-        
-        // Set initial volume
-        updatePlayerVolume()
     }
 
     private func updatePlayerTime() {
         guard let player = _player else { return }
         Task { @MainActor in
-            await player.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
+            // Use more precise seeking
+            await player.seek(
+                to: CMTime(seconds: startTime, preferredTimescale: 600),
+                toleranceBefore: .zero,
+                toleranceAfter: .zero
+            )
             player.play()
         }
     }
@@ -312,145 +293,49 @@ class VideoEditViewModel: ObservableObject {
     }
 
     func exportVideo() async throws -> URL {
-        guard !clips.isEmpty else {
-            throw NSError(
-                domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "No clips to export"]
-            )
-        }
-
+        guard let composition = composition else { throw VideoError.noComposition }
+        
         isProcessing = true
         defer { isProcessing = false }
-
-        // Create composition
-        let composition = AVMutableComposition()
-        let videoComposition = AVMutableVideoComposition()
-
-        // Create composition tracks
-        guard
-            let compositionVideoTrack = composition.addMutableTrack(
-                withMediaType: .video,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            ),
-            let compositionAudioTrack = composition.addMutableTrack(
-                withMediaType: .audio,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            )
-        else {
-            throw NSError(
-                domain: "", code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to create composition tracks"]
-            )
-        }
-
-        var currentTime = CMTime.zero
-        var instructions: [AVMutableVideoCompositionInstruction] = []
-        var audioMixParameters: [AVMutableAudioMixInputParameters] = []
-
-        // Process each clip
-        for clip in clips {
-            do {
-                // Load tracks for current clip
-                let videoTrack = try await clip.asset.loadTracks(withMediaType: .video).first
-                let audioTrack = try await clip.asset.loadTracks(withMediaType: .audio).first
-
-                guard let videoTrack = videoTrack, let audioTrack = audioTrack else { continue }
-
-                // Calculate time range for the clip
-                let timeRange = CMTimeRange(
-                    start: CMTime(seconds: clip.startTime, preferredTimescale: 600),
-                    end: CMTime(seconds: clip.endTime, preferredTimescale: 600)
-                )
-                let clipDuration = timeRange.duration
-
-                // Insert tracks into composition
-                try compositionVideoTrack.insertTimeRange(timeRange, of: videoTrack, at: currentTime)
-                try compositionAudioTrack.insertTimeRange(timeRange, of: audioTrack, at: currentTime)
-
-                // Create instruction for this clip
-                let instruction = AVMutableVideoCompositionInstruction()
-                instruction.timeRange = CMTimeRange(start: currentTime, duration: clipDuration)
-
-                // Get and apply the original transform
-                let originalTransform = try await videoTrack.load(.preferredTransform)
-                _ = try await videoTrack.load(.naturalSize)  // Use _ to explicitly ignore
-
-                let layerInstruction = AVMutableVideoCompositionLayerInstruction(
-                    assetTrack: compositionVideoTrack)
-                layerInstruction.setTransform(originalTransform, at: currentTime)
-                instruction.layerInstructions = [layerInstruction]
-                instructions.append(instruction)
-
-                // Setup audio parameters
-                let audioParams = AVMutableAudioMixInputParameters(track: compositionAudioTrack)
-                audioParams.setVolume(Float(clip.volume), at: currentTime)
-                audioMixParameters.append(audioParams)
-
-                // Update current time for next clip
-                currentTime = CMTimeAdd(currentTime, clipDuration)
-
-            } catch {
-                print("Error processing clip: \(error)")
-                continue
-            }
-        }
-
-        // Setup video composition
-        if let firstClip = clips.first,
-           let videoTrack = try? await firstClip.asset.loadTracks(withMediaType: .video).first
-        {
-            let naturalSize = try await videoTrack.load(.naturalSize)
-            let transform = try await videoTrack.load(.preferredTransform)
-
-            let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
-            let renderWidth = isVideoPortrait ? naturalSize.height : naturalSize.width
-            let renderHeight = isVideoPortrait ? naturalSize.width : naturalSize.height
-
-            videoComposition.renderSize = CGSize(width: renderWidth, height: renderHeight)
-            videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
-            videoComposition.instructions = instructions
-        }
-
-        // Create temporary URL for export
-        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(
-            "\(UUID().uuidString).mp4")
-
-        // Setup export session on main actor
+        
+        // Create export session
         guard let exportSession = AVAssetExportSession(
             asset: composition,
             presetName: AVAssetExportPresetHighestQuality
         ) else {
-            throw NSError(
-                domain: "", code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to create export session"]
-            )
+            throw VideoError.exportSessionCreationFailed
         }
-
-        // Configure export session
+        
+        // Configure export
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("mp4")
+        
         exportSession.outputURL = outputURL
         exportSession.outputFileType = .mp4
-        exportSession.videoComposition = videoComposition
-
-        // Set audio mix
-        let audioMix = AVMutableAudioMix()
-        audioMix.inputParameters = audioMixParameters
-        exportSession.audioMix = audioMix
-
-        // Export the video using new async API
-        try await exportSession.export(to: outputURL, as: .mp4)
-
+        
+        // Export
+        await exportSession.export()
+        
+        guard exportSession.status == .completed else {
+            throw exportSession.error ?? VideoError.exportFailed
+        }
+        
         return outputURL
     }
 
     func cleanup() {
-        if let timeObserver = timeObserver {
-            _player?.removeTimeObserver(timeObserver)
-            self.timeObserver = nil
+        if let observer = timeObserver {
+            _player?.removeTimeObserver(observer)
+            timeObserver = nil
         }
         _player?.pause()
         _player = nil
         playerItem = nil
         clips.removeAll()
         selectedClipIndex = nil
+        composition = nil
+        totalDuration = 0
     }
 
     func swapClips(at index: Int) {
@@ -473,75 +358,95 @@ class VideoEditViewModel: ObservableObject {
     }
 
     func splitClip(at time: Double) async {
-        // Find which clip contains this time
-        var accumulatedTime: Double = 0
-        for (index, clip) in clips.enumerated() {
-            let clipDuration = clip.endTime - clip.startTime
-            let clipEndTime = accumulatedTime + clipDuration
-
-            if time > accumulatedTime && time < clipEndTime {
-                // Calculate the relative split point within this clip
-                let relativeTime = time - accumulatedTime + clip.startTime
-
-                // Create two new clips from the original
-                var firstHalf = VideoClip(
-                    asset: clip.asset,
-                    startTime: clip.startTime,
-                    endTime: relativeTime,
-                    thumbnail: nil
-                )
-
-                var secondHalf = VideoClip(
-                    asset: clip.asset,
-                    startTime: relativeTime,
-                    endTime: clip.endTime,
-                    thumbnail: nil
-                )
-
-                // Generate new thumbnails for both clips
-                do {
-                    let imageGenerator = AVAssetImageGenerator(asset: clip.asset)
-                    imageGenerator.appliesPreferredTrackTransform = true
-
-                    // Generate thumbnail for first half at its midpoint using new async API
-                    let firstHalfMidpoint = CMTime(
-                        seconds: (firstHalf.startTime + firstHalf.endTime) / 2,
-                        preferredTimescale: 600
-                    )
-                    let firstHalfImageResult = try await imageGenerator.image(at: firstHalfMidpoint)
-                    firstHalf.thumbnail = UIImage(cgImage: firstHalfImageResult.image)
-
-                    // Generate thumbnail for second half at its midpoint
-                    let secondHalfMidpoint = CMTime(
-                        seconds: (secondHalf.startTime + secondHalf.endTime) / 2,
-                        preferredTimescale: 600
-                    )
-                    let secondHalfImageResult = try await imageGenerator.image(at: secondHalfMidpoint)
-                    secondHalf.thumbnail = UIImage(cgImage: secondHalfImageResult.image)
-
-                    // Update clips on main actor
-                    await MainActor.run {
-                        clips.remove(at: index)
-                        clips.insert(secondHalf, at: index)
-                        clips.insert(firstHalf, at: index)
-
-                        if selectedClipIndex == index {
-                            selectedClipIndex = index
-                        } else if let selected = selectedClipIndex, selected > index {
-                            selectedClipIndex = selected + 1
-                        }
-                    }
-
-                    // Update player with new clips
-                    try await setupPlayerWithComposition()
-                    return
-                } catch {
-                    print("Error generating thumbnails for split clips: \(error)")
-                    // Handle error appropriately
-                }
+        print("Starting splitClip operation at time: \(time)")
+        guard !clips.isEmpty else {
+            print("No clips to split")
+            return
+        }
+        
+        await MainActor.run {
+            isProcessing = true
+            print("Set isProcessing to true")
+        }
+        
+        defer {
+            Task { @MainActor in
+                isProcessing = false
+                print("Set isProcessing to false")
             }
-
-            accumulatedTime += clipDuration
+        }
+        
+        guard let composition = composition else {
+            print("No composition available for splitting")
+            return
+        }
+        
+        let splitTime = CMTime(seconds: time, preferredTimescale: 600)
+        let tracks = composition.tracks
+        print("Found \(tracks.count) tracks to split")
+        
+        do {
+            // Split each track at the specified time
+            for (index, track) in tracks.enumerated() {
+                print("Processing track \(index + 1) of \(tracks.count)")
+                guard let segment = try await track.segment(forTrackTime: splitTime) else {
+                    print("No segment found for track \(index + 1)")
+                    continue
+                }
+                
+                print("Creating new track for split")
+                guard let newTrack = composition.addMutableTrack(
+                    withMediaType: track.mediaType,
+                    preferredTrackID: kCMPersistentTrackID_Invalid
+                ) else {
+                    print("Failed to create new track for split")
+                    continue
+                }
+                
+                let timeMapping = segment.timeMapping
+                
+                print("Moving second part to new track")
+                try newTrack.insertTimeRange(
+                    CMTimeRange(start: splitTime, end: timeMapping.target.end),
+                    of: track,
+                    at: splitTime
+                )
+                
+                print("Trimming original track")
+                try track.removeTimeRange(
+                    CMTimeRange(start: splitTime, end: timeMapping.target.end)
+                )
+            }
+            
+            print("Updating UI after split")
+            await MainActor.run {
+                if let selectedIndex = selectedClipIndex,
+                   selectedIndex < clips.count {
+                    var originalClip = clips[selectedIndex]
+                    let splitDuration = originalClip.endTime - time
+                    
+                    print("Updating original clip duration")
+                    originalClip.endTime = time
+                    clips[selectedIndex] = originalClip
+                    
+                    print("Creating new clip for split part")
+                    let newClip = VideoClip(
+                        asset: originalClip.asset,
+                        startTime: time,
+                        endTime: time + splitDuration,
+                        thumbnail: originalClip.thumbnail
+                    )
+                    
+                    print("Inserting new clip")
+                    clips.insert(newClip, at: selectedIndex + 1)
+                }
+                
+                updatePlayer()
+            }
+            print("Successfully completed splitClip operation")
+        } catch {
+            print("Error in splitClip: \(error.localizedDescription)")
+            print("Error details: \(error)")
         }
     }
 
@@ -558,24 +463,47 @@ class VideoEditViewModel: ObservableObject {
         videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
     }
 
-    // Fix Sendable conformance for AVVideoCompositing protocol properties
-    nonisolated var sourcePixelBufferAttributes: [String: Any]? {
-        return [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferMetalCompatibilityKey as String: true
-        ]
+    private func setupPlayerWithComposition() async throws {
+        guard let composition = composition else { throw VideoError.noComposition }
+        
+        await MainActor.run {
+            // Create player item
+            let playerItem = AVPlayerItem(asset: composition)
+            
+            // Create or update player
+            if let player = player {
+                player.replaceCurrentItem(with: playerItem)
+            } else {
+                player = AVPlayer(playerItem: playerItem)
+                setupTimeObserver()
+            }
+        }
     }
+}
+
+// MARK: - Error Types
+enum VideoError: LocalizedError {
+    case compositionCreationFailed
+    case noVideoTrack
+    case trackCreationFailed
+    case noComposition
+    case exportSessionCreationFailed
+    case exportFailed
     
-    nonisolated var requiredPixelBufferAttributesForRenderContext: [String: Any] {
-        return [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferMetalCompatibilityKey as String: true
-        ]
+    var errorDescription: String? {
+        switch self {
+        case .compositionCreationFailed:
+            return "Failed to create video composition"
+        case .noVideoTrack:
+            return "No video track found in asset"
+        case .trackCreationFailed:
+            return "Failed to create composition track"
+        case .noComposition:
+            return "No composition available for export"
+        case .exportSessionCreationFailed:
+            return "Failed to create export session"
+        case .exportFailed:
+            return "Failed to export video"
+        }
     }
-    
-    // Fix CIContext Sendable warning by making it actor-isolated
-    private let ciContext: CIContext = {
-        let options = [CIContextOption.useSoftwareRenderer: false]
-        return CIContext(options: options)
-    }()
 }
