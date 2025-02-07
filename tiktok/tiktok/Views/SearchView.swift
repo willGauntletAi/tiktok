@@ -149,11 +149,11 @@ struct ContentCard: View {
                 // Just the single exercise
                 videos = [exercise]
             case let .workout(workout):
-                // Workout followed by its exercises
-                videos = [workout] + workout.exercises
+                // Use the standard getAllVideos method
+                videos = workout.getAllVideos()
             case let .workoutPlan(plan):
-                // Plan, followed by workouts, followed by exercises
-                videos = [plan] + plan.workouts.map(\.workout) + plan.workouts.flatMap(\.workout.exercises)
+                // Use the standard getAllVideos method
+                videos = plan.getAllVideos()
             }
             navigator.navigate(to: .videoDetail(videos: videos, startIndex: 0))
         }) {

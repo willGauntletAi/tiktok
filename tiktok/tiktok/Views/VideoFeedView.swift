@@ -1,24 +1,6 @@
 import AVKit
 import SwiftUI
 
-// Helper function moved to top level for reuse
-private func getAllVideos(from workoutPlan: WorkoutPlan) -> [any VideoContent] {
-    var allVideos: [any VideoContent] = []
-
-    // Add the workout plan itself as it contains a video
-    allVideos.append(workoutPlan)
-
-    // Add each workout and its exercises
-    for workoutMeta in workoutPlan.workouts {
-        // Add the workout itself as it contains a video
-        allVideos.append(workoutMeta.workout)
-        // Add all exercises from the workout
-        allVideos.append(contentsOf: workoutMeta.workout.exercises)
-    }
-
-    return allVideos
-}
-
 struct ProfileVideoWrapper: View {
     let workoutPlan: WorkoutPlan
     @EnvironmentObject private var navigator: Navigator

@@ -81,7 +81,7 @@ func view(for destination: Destination) -> some View {
         )
     case let .workout(workout):
         VideoDetailView(
-            videos: workout.exercises,
+            videos: workout.getAllVideos(),
             startAt: 0,
             showBackButton: true,
             onBack: {
@@ -93,7 +93,7 @@ func view(for destination: Destination) -> some View {
         )
     case let .workoutPlan(plan):
         VideoDetailView(
-            videos: plan.workouts.flatMap { $0.workout.exercises },
+            videos: plan.getAllVideos(),
             startAt: 0,
             showBackButton: true,
             onBack: {

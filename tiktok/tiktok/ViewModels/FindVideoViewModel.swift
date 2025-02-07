@@ -79,7 +79,6 @@ class FindVideoViewModel<T: VideoContent>: ObservableObject {
         let id = doc.documentID
         let title = data["title"] as? String ?? ""
         let description = data["description"] as? String ?? ""
-        let exercises: [Exercise] = []
         let instructorId = data["instructorId"] as? String ?? ""
         let videoUrl = data["videoUrl"] as? String ?? ""
         let thumbnailUrl = data["thumbnailUrl"] as? String ?? ""
@@ -88,6 +87,29 @@ class FindVideoViewModel<T: VideoContent>: ObservableObject {
         let totalDuration = data["totalDuration"] as? Int ?? 0
         let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
         let updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
+
+        // Convert exercise references to Exercise objects
+        var exercises: [Exercise] = []
+        if let exerciseRefs = data["exercises"] as? [[String: Any]] {
+            exercises = exerciseRefs.compactMap { exerciseData in
+                guard let id = exerciseData["id"] as? String else { return nil }
+                return Exercise(
+                    id: id,
+                    title: exerciseData["title"] as? String ?? "",
+                    description: exerciseData["description"] as? String ?? "",
+                    instructorId: exerciseData["instructorId"] as? String ?? "",
+                    videoUrl: exerciseData["videoUrl"] as? String ?? "",
+                    thumbnailUrl: exerciseData["thumbnailUrl"] as? String ?? "",
+                    difficulty: Difficulty(rawValue: exerciseData["difficulty"] as? String ?? "beginner") ?? .beginner,
+                    targetMuscles: exerciseData["targetMuscles"] as? [String] ?? [],
+                    duration: exerciseData["duration"] as? Int ?? 0,
+                    sets: exerciseData["sets"] as? Int,
+                    reps: exerciseData["reps"] as? Int,
+                    createdAt: (exerciseData["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
+                    updatedAt: (exerciseData["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
+                )
+            }
+        }
 
         return Workout(
             id: id,
