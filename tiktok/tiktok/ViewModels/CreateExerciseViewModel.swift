@@ -300,12 +300,13 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
             self.videoData = videoData
 
             // Generate thumbnail
-            let asset = AVAsset(url: url)
+            let asset = AVURLAsset(url: url)
             let imageGenerator = AVAssetImageGenerator(asset: asset)
             imageGenerator.appliesPreferredTrackTransform = true
 
-            let cgImage = try imageGenerator.copyCGImage(at: .zero, actualTime: nil)
-            videoThumbnail = UIImage(cgImage: cgImage)
+            // Use new async API for generating thumbnails
+            let image = try await imageGenerator.image(at: .zero)
+            videoThumbnail = UIImage(cgImage: image.image)
 
             // Get video duration
             let duration = try await asset.load(.duration)
@@ -331,22 +332,20 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
                 UUID().uuidString + ".mov")
             try data.write(to: tmpURL)
 
-            let asset = AVAsset(url: tmpURL)
+            let asset = AVURLAsset(url: tmpURL)
 
             // Configure thumbnail generator
             let imageGenerator = AVAssetImageGenerator(asset: asset)
             imageGenerator.appliesPreferredTrackTransform = true
             imageGenerator.maximumSize = CGSize(width: 400, height: 400)
-            imageGenerator.requestedTimeToleranceBefore = .zero
-            imageGenerator.requestedTimeToleranceAfter = .zero
 
-            // Load duration and generate thumbnail
-            async let duration = asset.load(.duration)
-            async let cgImage = imageGenerator.copyCGImage(at: .zero, actualTime: nil)
+            // Use new async API for generating thumbnails
+            let image = try await imageGenerator.image(at: .zero)
+            videoThumbnail = UIImage(cgImage: image.image)
 
-            // Wait for both operations to complete
-            exercise.duration = try Int(await duration.seconds)
-            videoThumbnail = try UIImage(cgImage: await cgImage)
+            // Get video duration
+            let duration = try await asset.load(.duration)
+            exercise.duration = Int(duration.seconds)
 
             try FileManager.default.removeItem(at: tmpURL)
 

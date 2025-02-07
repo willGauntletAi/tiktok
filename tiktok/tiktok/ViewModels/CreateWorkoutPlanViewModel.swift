@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import FirebaseAuth
 import FirebaseFirestore
 import FirebaseStorage
@@ -111,16 +111,15 @@ class CreateWorkoutPlanViewModel: ObservableObject {
                 UUID().uuidString + ".mov")
             try data.write(to: tmpURL)
 
-            let asset = AVAsset(url: tmpURL)
+            let asset = AVURLAsset(url: tmpURL)
 
             let imageGenerator = AVAssetImageGenerator(asset: asset)
             imageGenerator.appliesPreferredTrackTransform = true
             imageGenerator.maximumSize = CGSize(width: 400, height: 400)
-            imageGenerator.requestedTimeToleranceBefore = .zero
-            imageGenerator.requestedTimeToleranceAfter = .zero
 
-            let cgImage = try imageGenerator.copyCGImage(at: .zero, actualTime: nil)
-            videoThumbnail = UIImage(cgImage: cgImage)
+            // Use new async API for generating thumbnails
+            let image = try await imageGenerator.image(at: .zero)
+            videoThumbnail = UIImage(cgImage: image.image)
 
             try FileManager.default.removeItem(at: tmpURL)
 

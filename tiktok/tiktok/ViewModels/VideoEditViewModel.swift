@@ -1,3 +1,4 @@
+@preconcurrency import CoreImage
 @preconcurrency import AVFoundation
 import SwiftUI
 import UIKit
@@ -38,27 +39,19 @@ class VideoEditViewModel: ObservableObject {
     // Thread-safe player access
     private var _player: AVPlayer?
     var player: AVPlayer? {
-        get {
-            _player
-        }
-        set {
-            _player = newValue
-        }
+        get { _player }
+        set { _player = newValue }
     }
 
     private var playerItem: AVPlayerItem?
     private var timeObserver: Any?
     private var videoTrack: AVAssetTrack?
 
-    // Make totalDuration access thread-safe
+    // Make totalDuration thread-safe
     private var _totalDuration: Double = 0
     var totalDuration: Double {
-        get {
-            _totalDuration
-        }
-        set {
-            _totalDuration = newValue
-        }
+        get { _totalDuration }
+        set { _totalDuration = newValue }
     }
 
     func addClip(from url: URL) async throws {
@@ -154,7 +147,6 @@ class VideoEditViewModel: ObservableObject {
 
                 // Get and apply the original transform
                 let originalTransform = try await videoTrack.load(.preferredTransform)
-                let naturalSize = try await videoTrack.load(.naturalSize)
 
                 let layerInstruction = AVMutableVideoCompositionLayerInstruction(
                     assetTrack: compositionVideoTrack)
@@ -206,33 +198,31 @@ class VideoEditViewModel: ObservableObject {
             )
         }
 
-        exportSession.outputURL = outputURL
-        exportSession.outputFileType = .mp4
-        exportSession.videoComposition = videoComposition
-
-        // Export the video
-        await exportSession.export()
-        
-        if let error = exportSession.error {
-            throw error
+        await MainActor.run {
+            exportSession.outputURL = outputURL
+            exportSession.outputFileType = .mp4
+            exportSession.videoComposition = videoComposition
         }
+
+        // Export the video using new async API
+        try await exportSession.export(to: outputURL, as: .mp4)
             
         // Update total duration
-        self._totalDuration = try await composition.load(.duration).seconds
+        let duration = try await composition.load(.duration).seconds
+        self._totalDuration = duration
         
         // Create and configure player
         let player = AVPlayer(playerItem: AVPlayerItem(asset: composition))
-        await MainActor.run {
-            self._player = player
-        }
+        self._player = player
         
-        // Add time observer on main actor
+        // Add time observer
         let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+        let totalDurationCopy = self.totalDuration
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self else { return }
             
             let currentTime = time.seconds
-            if currentTime >= self.totalDuration {
+            if currentTime >= totalDurationCopy {
                 Task { @MainActor in
                     await player.seek(to: .zero)
                     player.play()
@@ -382,7 +372,7 @@ class VideoEditViewModel: ObservableObject {
 
                 // Get and apply the original transform
                 let originalTransform = try await videoTrack.load(.preferredTransform)
-                let naturalSize = try await videoTrack.load(.naturalSize)
+                _ = try await videoTrack.load(.naturalSize)  // Use _ to explicitly ignore
 
                 let layerInstruction = AVMutableVideoCompositionLayerInstruction(
                     assetTrack: compositionVideoTrack)
@@ -424,19 +414,18 @@ class VideoEditViewModel: ObservableObject {
         let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(
             "\(UUID().uuidString).mp4")
 
-        // Setup export session
-        guard
-            let exportSession = AVAssetExportSession(
-                asset: composition,
-                presetName: AVAssetExportPresetHighestQuality
-            )
-        else {
+        // Setup export session on main actor
+        guard let exportSession = AVAssetExportSession(
+            asset: composition,
+            presetName: AVAssetExportPresetHighestQuality
+        ) else {
             throw NSError(
                 domain: "", code: -1,
                 userInfo: [NSLocalizedDescriptionKey: "Failed to create export session"]
             )
         }
 
+        // Configure export session
         exportSession.outputURL = outputURL
         exportSession.outputFileType = .mp4
         exportSession.videoComposition = videoComposition
@@ -446,12 +435,8 @@ class VideoEditViewModel: ObservableObject {
         audioMix.inputParameters = audioMixParameters
         exportSession.audioMix = audioMix
 
-        // Export the video
-        await exportSession.export()
-
-        if let error = exportSession.error {
-            throw error
-        }
+        // Export the video using new async API
+        try await exportSession.export(to: outputURL, as: .mp4)
 
         return outputURL
     }
@@ -559,43 +544,38 @@ class VideoEditViewModel: ObservableObject {
             accumulatedTime += clipDuration
         }
     }
-}
 
-// Make VideoCompositor conform to Sendable
-@objc final class VideoCompositor: NSObject, AVVideoCompositing, @unchecked Sendable {
-    private let renderContext = CIContext()
-    private let colorSpace = CGColorSpaceCreateDeviceRGB()
-    
-    func renderContextChanged(_: AVVideoCompositionRenderContext) {}
-    
-    func cancelAllPendingVideoCompositionRequests() {}
-    
-    var sourcePixelBufferAttributes: [String: Any]? {
-        [
+    // Fix unused naturalSize warning
+    private func configureVideoComposition(_ videoComposition: AVMutableVideoComposition, with videoTrack: AVAssetTrack) async throws {
+        let size = try await videoTrack.load(.naturalSize)
+        let transform = try await videoTrack.load(.preferredTransform)
+        
+        let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
+        let renderWidth = isVideoPortrait ? size.height : size.width
+        let renderHeight = isVideoPortrait ? size.width : size.height
+        
+        videoComposition.renderSize = CGSize(width: renderWidth, height: renderHeight)
+        videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+    }
+
+    // Fix Sendable conformance for AVVideoCompositing protocol properties
+    nonisolated var sourcePixelBufferAttributes: [String: Any]? {
+        return [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferMetalCompatibilityKey as String: true,
+            kCVPixelBufferMetalCompatibilityKey as String: true
         ]
     }
     
-    var requiredPixelBufferAttributesForRenderContext: [String: Any] {
-        [
+    nonisolated var requiredPixelBufferAttributesForRenderContext: [String: Any] {
+        return [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferMetalCompatibilityKey as String: true,
+            kCVPixelBufferMetalCompatibilityKey as String: true
         ]
     }
     
-    func startRequest(_ request: AVAsynchronousVideoCompositionRequest) {
-        guard let sourceBuffer = request.sourceFrame(byTrackID: request.sourceTrackIDs[0].int32Value),
-              let destinationBuffer = request.renderContext.newPixelBuffer()
-        else {
-            request.finish(with: NSError(domain: "VideoCompositor", code: -1, userInfo: nil))
-            return
-        }
-        
-        let sourceImage = CIImage(cvPixelBuffer: sourceBuffer)
-        let outputImage = sourceImage
-        
-        renderContext.render(outputImage, to: destinationBuffer)
-        request.finish(withComposedVideoFrame: destinationBuffer)
-    }
+    // Fix CIContext Sendable warning by making it actor-isolated
+    private let ciContext: CIContext = {
+        let options = [CIContextOption.useSoftwareRenderer: false]
+        return CIContext(options: options)
+    }()
 }

@@ -194,8 +194,8 @@ struct VideoTimelineView: View {
         .onDisappear {
             seekTask?.cancel()
         }
-        .onChange(of: selectedItem) { item in
-            if let item = item {
+        .onChange(of: selectedItem) { oldValue, newValue in
+            if let item = newValue {
                 Task {
                     isAddingClip = true
                     do {
@@ -270,8 +270,8 @@ struct VideoTimelineView: View {
                     }
                 }
             }
-            .onChange(of: cameraViewModel.videoData) { newData in
-                if let data = newData {
+            .onChange(of: cameraViewModel.videoData) { oldValue, newValue in
+                if let data = newValue {
                     Task {
                         isAddingClip = true
                         let tempURL = FileManager.default.temporaryDirectory
@@ -316,9 +316,11 @@ struct VideoTimelineView: View {
 
     private func startPositionTimer() {
         // Create a timer that updates every 1/30th of a second
-        Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
-            if !isDragging, let player = viewModel.player {
-                currentPosition = player.currentTime().seconds
+        Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { timer in
+            Task { @MainActor in
+                if !isDragging, let player = viewModel.player {
+                    currentPosition = player.currentTime().seconds
+                }
             }
         }
     }

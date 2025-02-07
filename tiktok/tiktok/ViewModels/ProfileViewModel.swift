@@ -191,19 +191,17 @@ class ProfileViewModel: ObservableObject {
 
     @MainActor
     func signOut() {
-        Task {
-            isSigningOut = true
-            do {
-                try await auth.signOut()
-                // Clear user data after logout
-                user = nil
-                userVideos = []
-                likedVideos = []
-            } catch {
-                self.error = error.localizedDescription
-                print("Error signing out: \(error)")
-            }
-            isSigningOut = false
+        isSigningOut = true
+        do {
+            try auth.signOut()
+            // Clear user data after logout
+            user = nil
+            userVideos = []
+            likedVideos = []
+        } catch {
+            self.error = error.localizedDescription
+            print("Error signing out: \(error)")
         }
+        isSigningOut = false
     }
 }

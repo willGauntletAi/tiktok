@@ -144,15 +144,17 @@ extension CameraPreviewView {
             super.layoutSubviews()
             print("Layout subviews - bounds: \(bounds)")
             previewLayer.frame = bounds
-            previewLayer.connection?.videoOrientation = .portrait
 
-            // Add additional configuration
+            if previewLayer.connection?.isVideoRotationAngleSupported(90.0) == true {
+                previewLayer.connection?.videoRotationAngle = 90.0
+            }
+
             previewLayer.cornerRadius = 0
             previewLayer.masksToBounds = true
 
             if let connection = previewLayer.connection {
                 print(
-                    "Preview layer connection available - orientation: \(connection.videoOrientation.rawValue)"
+                    "Preview layer connection available - rotation angle: \(connection.videoRotationAngle)"
                 )
             } else {
                 print("No preview layer connection")

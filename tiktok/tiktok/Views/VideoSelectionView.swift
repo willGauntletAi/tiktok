@@ -73,7 +73,7 @@ struct VideoSelectionView: View {
                         .foregroundColor(isChangingVideo ? .gray : .primary)
                     }
                     .disabled(isChangingVideo)
-                    .onChange(of: selectedItem) { newValue in
+                    .onChange(of: selectedItem) { oldValue, newValue in
                         if let item = newValue {
                             withAnimation {
                                 isChangingVideo = true

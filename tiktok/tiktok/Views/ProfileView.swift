@@ -68,11 +68,7 @@ struct ProfileView: View {
                         Menu {
                             Button(
                                 role: .destructive,
-                                action: {
-                                    Task {
-                                        await viewModel.signOut()
-                                    }
-                                }
+                                action: { viewModel.signOut() }
                             ) {
                                 Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
                             }
