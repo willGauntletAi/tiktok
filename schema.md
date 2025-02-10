@@ -7,6 +7,15 @@ erDiagram
         timestamp updatedAt
     }
 
+    Song {
+        string id PK
+        string title
+        string storageRef "Firebase storage reference"
+        array tags "array of strings"
+        timestamp createdAt
+        timestamp updatedAt
+    }
+
     Video {
         string id PK
         enum type "exercise|workout|workoutPlan"

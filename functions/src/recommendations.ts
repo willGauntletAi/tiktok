@@ -24,6 +24,7 @@ export const getRecommendations = onCall<RecommendationRequest>(async (request) 
         const videoIds = request.data.videoIds || [];
 
         const db = admin.firestore();
+        console.log("Getting recommendations for videoIds:", videoIds);
 
         // Get videos to sample from
         const videosSnapshot = await db.collection("videos")
