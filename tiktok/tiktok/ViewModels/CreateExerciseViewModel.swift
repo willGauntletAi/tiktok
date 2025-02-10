@@ -21,6 +21,9 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
     @Published var showCamera = false
     @Published var currentFrame: CGImage?
 
+    var navigator: Navigator?
+    var dismiss: (() -> Void)?
+
     // Camera session properties
     private var _captureSession: AVCaptureSession?
     var captureSession: AVCaptureSession? {
@@ -45,8 +48,6 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
             continuation.yield(cgImage)
         }
     }
-
-    var navigator: Navigator?
 
     override init() {
         super.init()
@@ -172,8 +173,8 @@ class CreateExerciseViewModel: NSObject, ObservableObject,
                 videoData = nil
                 videoThumbnail = nil
 
-                // 6. Trigger navigation to profile
-                navigator?.navigate(to: .profile)
+                // 6. Dismiss the creation view
+                dismiss?()
             }
         } catch {
             showError = true

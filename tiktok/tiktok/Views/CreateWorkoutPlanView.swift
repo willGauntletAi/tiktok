@@ -9,6 +9,7 @@ struct CreateWorkoutPlanView: View {
     @Environment(\.presentationMode) var presentationMode
     @State private var showVideoEditor = false
     @EnvironmentObject private var navigator: Navigator
+    let onComplete: () -> Void
 
     enum Field {
         case title
@@ -228,6 +229,7 @@ struct CreateWorkoutPlanView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             viewModel.navigator = navigator
+            viewModel.dismiss = onComplete
         }
         .sheet(isPresented: $showVideoEditor) {
             VideoEditView { url in

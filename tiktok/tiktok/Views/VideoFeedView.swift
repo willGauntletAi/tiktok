@@ -312,9 +312,33 @@ struct VideoFeedView: View {
                     let doc = try await db.collection("videos").document(recommendation.videoId).getDocument()
                     let videosToShow = try await handleVideoDocument(doc, db: db)
                     
-                    // Create individual lists for each video
-                    for video in videosToShow {
-                        newVideoLists.append([video])
+                    // Handle different content types appropriately
+                    if let firstVideo = videosToShow.first {
+                        switch firstVideo {
+                        case is Exercise:
+                            // For exercises, create individual lists
+                            for video in videosToShow {
+                                newVideoLists.append([video])
+                            }
+                            
+                        case is Workout:
+                            // For workouts, keep the workout and its exercises together
+                            if let workout = firstVideo as? Workout {
+                                var allVideos: [any VideoContent] = [workout]
+                                allVideos.append(contentsOf: workout.exercises)
+                                newVideoLists.append(allVideos)
+                            }
+                            
+                        case is WorkoutPlan:
+                            // For workout plans, use getAllVideos to get everything in the right order
+                            if let workoutPlan = firstVideo as? WorkoutPlan {
+                                newVideoLists.append(workoutPlan.getAllVideos())
+                            }
+                            
+                        default:
+                            print("🎬 Unknown video type")
+                            continue
+                        }
                     }
                 } catch {
                     print("❌ Error fetching video: \(error)")

@@ -34,6 +34,7 @@ class CreateWorkoutPlanViewModel: ObservableObject {
     @Published var showScheduleEditor = false
 
     var navigator: Navigator?
+    var dismiss: (() -> Void)?
 
     private let db = Firestore.firestore()
 
@@ -180,8 +181,8 @@ class CreateWorkoutPlanViewModel: ObservableObject {
                 videoData = nil
                 videoThumbnail = nil
 
-                // 5. Trigger navigation to profile
-                navigator?.navigate(to: .profile)
+                // 5. Dismiss the creation view
+                dismiss?()
             }
         } catch {
             errorMessage = "Failed to save workout plan: \(error.localizedDescription)"

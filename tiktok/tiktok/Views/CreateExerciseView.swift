@@ -51,6 +51,7 @@ struct CreateExerciseView: View {
     @FocusState private var focusedField: Field?
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var navigator: Navigator
+    let onComplete: () -> Void
 
     enum Field {
         case title
@@ -199,6 +200,7 @@ struct CreateExerciseView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             viewModel.navigator = navigator
+            viewModel.dismiss = onComplete
         }
         .sheet(isPresented: $showingMuscleSelector) {
             MuscleSelectorView(
