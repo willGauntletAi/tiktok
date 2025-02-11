@@ -12,6 +12,8 @@ struct VideoPicker: UIViewControllerRepresentable {
         var config = PHPickerConfiguration()
         config.filter = .videos
         config.selectionLimit = 1
+        // Request high performance delivery mode
+        config.preferredAssetRepresentationMode = .current
         let picker = PHPickerViewController(configuration: config)
         picker.delegate = context.coordinator
         return picker
@@ -46,8 +48,17 @@ struct VideoPicker: UIViewControllerRepresentable {
                 self.parent.isAddingClip = true
             }
 
+            // Create a unique temporary file URL
+            let tempURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension("mov")
+
+            // First try to get the video file URL directly
             if provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
-                provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, error in
+                // Try to load as AVURLAsset first for better performance
+                provider.loadItem(forTypeIdentifier: UTType.movie.identifier, options: nil) { [weak self] item, error in
+                    guard let self = self else { return }
+                    
                     if let error = error {
                         print("Error loading video: \(error.localizedDescription)")
                         DispatchQueue.main.async {
@@ -55,30 +66,70 @@ struct VideoPicker: UIViewControllerRepresentable {
                         }
                         return
                     }
-
-                    guard let url = url else {
-                        DispatchQueue.main.async {
-                            self.parent.isAddingClip = false
+                    
+                    if let videoURL = item as? URL {
+                        // Copy the file to our temporary location
+                        do {
+                            if FileManager.default.fileExists(atPath: tempURL.path) {
+                                try FileManager.default.removeItem(at: tempURL)
+                            }
+                            try FileManager.default.copyItem(at: videoURL, to: tempURL)
+                            
+                            DispatchQueue.main.async {
+                                self.parent.onVideoSelected(tempURL)
+                            }
+                        } catch {
+                            print("Error copying video: \(error.localizedDescription)")
+                            DispatchQueue.main.async {
+                                self.parent.isAddingClip = false
+                            }
                         }
-                        return
-                    }
-
-                    // Create a temporary copy of the video file
-                    let tempURL = FileManager.default.temporaryDirectory
-                        .appendingPathComponent(UUID().uuidString)
-                        .appendingPathExtension("mov")
-
-                    do {
-                        try FileManager.default.copyItem(at: url, to: tempURL)
-
-                        // Call onVideoSelected on the main thread
-                        DispatchQueue.main.async {
-                            self.parent.onVideoSelected(tempURL)
+                    } else if let videoData = item as? Data {
+                        // If we got data directly, write it to the file
+                        do {
+                            try videoData.write(to: tempURL)
+                            DispatchQueue.main.async {
+                                self.parent.onVideoSelected(tempURL)
+                            }
+                        } catch {
+                            print("Error writing video data: \(error.localizedDescription)")
+                            DispatchQueue.main.async {
+                                self.parent.isAddingClip = false
+                            }
                         }
-                    } catch {
-                        print("Error copying video: \(error.localizedDescription)")
-                        DispatchQueue.main.async {
-                            self.parent.isAddingClip = false
+                    } else {
+                        // Fallback to file representation if direct methods fail
+                        provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, error in
+                            if let error = error {
+                                print("Error loading video file: \(error.localizedDescription)")
+                                DispatchQueue.main.async {
+                                    self.parent.isAddingClip = false
+                                }
+                                return
+                            }
+
+                            guard let url = url else {
+                                DispatchQueue.main.async {
+                                    self.parent.isAddingClip = false
+                                }
+                                return
+                            }
+
+                            do {
+                                if FileManager.default.fileExists(atPath: tempURL.path) {
+                                    try FileManager.default.removeItem(at: tempURL)
+                                }
+                                try FileManager.default.copyItem(at: url, to: tempURL)
+                                
+                                DispatchQueue.main.async {
+                                    self.parent.onVideoSelected(tempURL)
+                                }
+                            } catch {
+                                print("Error copying video: \(error.localizedDescription)")
+                                DispatchQueue.main.async {
+                                    self.parent.isAddingClip = false
+                                }
+                            }
                         }
                     }
                 }
