@@ -58,7 +58,7 @@ struct VideoPicker: UIViewControllerRepresentable {
                 // Try to load as AVURLAsset first for better performance
                 provider.loadItem(forTypeIdentifier: UTType.movie.identifier, options: nil) { [weak self] item, error in
                     guard let self = self else { return }
-                    
+
                     if let error = error {
                         print("Error loading video: \(error.localizedDescription)")
                         DispatchQueue.main.async {
@@ -66,7 +66,7 @@ struct VideoPicker: UIViewControllerRepresentable {
                         }
                         return
                     }
-                    
+
                     if let videoURL = item as? URL {
                         // Copy the file to our temporary location
                         do {
@@ -74,7 +74,7 @@ struct VideoPicker: UIViewControllerRepresentable {
                                 try FileManager.default.removeItem(at: tempURL)
                             }
                             try FileManager.default.copyItem(at: videoURL, to: tempURL)
-                            
+
                             DispatchQueue.main.async {
                                 self.parent.onVideoSelected(tempURL)
                             }
@@ -120,7 +120,7 @@ struct VideoPicker: UIViewControllerRepresentable {
                                     try FileManager.default.removeItem(at: tempURL)
                                 }
                                 try FileManager.default.copyItem(at: url, to: tempURL)
-                                
+
                                 DispatchQueue.main.async {
                                     self.parent.onVideoSelected(tempURL)
                                 }
@@ -146,7 +146,7 @@ struct VideoClipContextMenu: View {
     @Binding var showZoomDialog: Bool
     @Binding var clipToDelete: Int?
     @Binding var showingDeleteAlert: Bool
-    
+
     var body: some View {
         Button(action: {
             selectedClipForZoom = index
@@ -154,7 +154,7 @@ struct VideoClipContextMenu: View {
         }) {
             Label("Add/Edit Zoom", systemImage: "plus.magnifyingglass")
         }
-        
+
         if clip.zoomConfig != nil {
             Button(role: .destructive, action: {
                 viewModel.updateZoomConfig(at: index, config: nil)
@@ -162,9 +162,9 @@ struct VideoClipContextMenu: View {
                 Label("Remove Zoom", systemImage: "minus.magnifyingglass")
             }
         }
-        
+
         Divider()
-        
+
         Button(role: .destructive, action: {
             clipToDelete = index
             showingDeleteAlert = true
@@ -293,7 +293,8 @@ struct VideoTimelineView: View {
         }
         .sheet(isPresented: $showZoomDialog) {
             if let index = selectedClipForZoom,
-               index < viewModel.clips.count {
+               index < viewModel.clips.count
+            {
                 let clip = viewModel.clips[index]
                 ZoomDialog(
                     clipDuration: clip.assetDuration,

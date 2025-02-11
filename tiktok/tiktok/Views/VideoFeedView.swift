@@ -1,6 +1,6 @@
 import AVKit
-import SwiftUI
 import FirebaseFirestore
+import SwiftUI
 
 struct ProfileVideoWrapper: View {
     let workoutPlan: WorkoutPlan
@@ -47,7 +47,7 @@ struct VideoFeedView: View {
         GeometryReader { geometry in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 0) {
-                    ForEach(0..<videos.count, id: \.self) { index in
+                    ForEach(0 ..< videos.count, id: \.self) { index in
                         VideoDetailView(
                             videos: videos[index],
                             startAt: 0,
@@ -99,7 +99,7 @@ struct VideoFeedView: View {
 
     private func handleVideoDocument(_ doc: DocumentSnapshot, db: Firestore) async throws -> [any VideoContent] {
         guard let data = doc.data() else { return [] }
-        
+
         let type = data["type"] as? String ?? ""
         var videosToShow: [any VideoContent] = []
 
@@ -121,7 +121,7 @@ struct VideoFeedView: View {
                 updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
             )
             videosToShow = [exercise]
-            
+
         case "workout":
             // Fetch the complete workout with its exercises
             let workout = Workout(
@@ -138,7 +138,7 @@ struct VideoFeedView: View {
                 createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
                 updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
             )
-            
+
             var exercises: [Exercise] = []
             // Fetch and add exercises
             if let exerciseDicts = data["exercises"] as? [[String: Any]] {
@@ -165,7 +165,7 @@ struct VideoFeedView: View {
                     }
                 }
             }
-            
+
             // Create a new workout with all exercises
             let completeWorkout = Workout(
                 id: workout.id,
@@ -182,7 +182,7 @@ struct VideoFeedView: View {
                 updatedAt: workout.updatedAt
             )
             videosToShow = [completeWorkout] + exercises
-            
+
         case "workoutPlan":
             // Create the workout plan
             let workoutPlan = WorkoutPlan(
@@ -199,7 +199,7 @@ struct VideoFeedView: View {
                 createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
                 updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
             )
-            
+
             var workoutsWithMetadata: [WorkoutWithMetadata] = []
             // Fetch and add workouts and their exercises
             if let workoutDicts = data["workouts"] as? [[String: Any]] {
@@ -233,7 +233,7 @@ struct VideoFeedView: View {
                                     }
                                 }
                             }
-                            
+
                             // Create workout with exercises
                             let workout = Workout(
                                 id: workoutId,
@@ -249,14 +249,14 @@ struct VideoFeedView: View {
                                 createdAt: (workoutData["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
                                 updatedAt: (workoutData["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
                             )
-                            
+
                             let workoutWithMetadata = WorkoutWithMetadata(
                                 workout: workout,
                                 weekNumber: workoutDict["weekNumber"] as? Int ?? 1,
                                 dayOfWeek: workoutDict["dayOfWeek"] as? Int ?? 1
                             )
                             workoutsWithMetadata.append(workoutWithMetadata)
-                            
+
                             // Add workout and its exercises to videos to show
                             videosToShow.append(workout)
                             videosToShow.append(contentsOf: exercises)
@@ -264,7 +264,7 @@ struct VideoFeedView: View {
                     }
                 }
             }
-            
+
             // Create complete workout plan with all workouts
             let completeWorkoutPlan = WorkoutPlan(
                 id: workoutPlan.id,
@@ -281,11 +281,11 @@ struct VideoFeedView: View {
                 updatedAt: workoutPlan.updatedAt
             )
             videosToShow.insert(completeWorkoutPlan, at: 0)
-            
+
         default:
             print("🎬 Unknown video type: \(type)")
         }
-        
+
         return videosToShow
     }
 
@@ -311,7 +311,7 @@ struct VideoFeedView: View {
                 do {
                     let doc = try await db.collection("videos").document(recommendation.videoId).getDocument()
                     let videosToShow = try await handleVideoDocument(doc, db: db)
-                    
+
                     // Handle different content types appropriately
                     if let firstVideo = videosToShow.first {
                         switch firstVideo {
@@ -320,7 +320,7 @@ struct VideoFeedView: View {
                             for video in videosToShow {
                                 newVideoLists.append([video])
                             }
-                            
+
                         case is Workout:
                             // For workouts, keep the workout and its exercises together
                             if let workout = firstVideo as? Workout {
@@ -328,13 +328,13 @@ struct VideoFeedView: View {
                                 allVideos.append(contentsOf: workout.exercises)
                                 newVideoLists.append(allVideos)
                             }
-                            
+
                         case is WorkoutPlan:
                             // For workout plans, use getAllVideos to get everything in the right order
                             if let workoutPlan = firstVideo as? WorkoutPlan {
                                 newVideoLists.append(workoutPlan.getAllVideos())
                             }
-                            
+
                         default:
                             print("🎬 Unknown video type")
                             continue

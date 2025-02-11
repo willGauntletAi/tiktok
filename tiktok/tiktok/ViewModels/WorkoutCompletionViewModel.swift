@@ -85,7 +85,7 @@ class WorkoutCompletionViewModel: ObservableObject {
     @MainActor
     func checkWorkoutCompletion() async throws {
         guard let workoutCompletionId = workoutCompletionId else { return }
-        
+
         let allExercises = Set(workout.exercises.map { $0.id })
         let completedExercises = Set(exerciseStates.filter { $0.value.sets.allSatisfy { $0.reps > 0 } }.keys)
 

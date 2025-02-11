@@ -3,6 +3,13 @@
 import SwiftUI
 import UIKit
 
+enum VideoError: Error {
+    case noVideoTrack
+    case noComposition
+    case exportSessionCreationFailed
+    case exportFailed
+}
+
 @MainActor
 class VideoEditViewModel: ObservableObject {
     @Published var clips: [VideoClip] = []
@@ -56,63 +63,69 @@ class VideoEditViewModel: ObservableObject {
 
     private var composition: AVMutableComposition?
 
+    private let poseDetectionService = PoseDetectionService()
+    private let setDetectionService = SetDetectionService()
+    @Published private(set) var poseDetectionInProgress = false
+    @Published private(set) var detectedSets: [DetectedExerciseSet] = []
+
     private func setupVideoComposition(for composition: AVMutableComposition, clips: [VideoClip]) async throws -> AVMutableVideoComposition {
         let videoComposition = AVMutableVideoComposition()
         videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
-        
+
         // Set color properties to maintain correct color appearance
         videoComposition.colorPrimaries = kCVImageBufferColorPrimaries_ITU_R_709_2 as String
         videoComposition.colorYCbCrMatrix = kCVImageBufferYCbCrMatrix_ITU_R_601_4 as String
         videoComposition.colorTransferFunction = kCVImageBufferTransferFunction_ITU_R_709_2 as String
-        
+
         var instructions: [AVMutableVideoCompositionInstruction] = []
         var currentTime = CMTime.zero
-        
+
         // Get all composition video tracks
         let compositionTracks = composition.tracks(withMediaType: .video)
-        
+
         // Process each clip
         for (index, clip) in clips.enumerated() {
             if let videoTrack = try await clip.asset.loadTracks(withMediaType: .video).first,
-               let compositionTrack = compositionTracks[safe: index] {
+               let compositionTrack = compositionTracks[safe: index]
+            {
                 // Create instruction for this clip
                 let instruction = AVMutableVideoCompositionInstruction()
                 let clipDuration = CMTime(seconds: clip.assetDuration, preferredTimescale: 600)
                 instruction.timeRange = CMTimeRange(start: currentTime, duration: clipDuration)
-                
+
                 let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
-                
+
                 // Get the original transform and properties
                 let transform = try await videoTrack.load(.preferredTransform)
                 let naturalSize = try await videoTrack.load(.naturalSize)
-                
+
                 // Set initial transform with color properties
                 layerInstruction.setTransform(transform, at: currentTime)
                 layerInstruction.setOpacity(1.0, at: currentTime)
-                
+
                 // Handle zoom effect if configured
                 if let zoomConfig = clip.zoomConfig {
                     // Calculate zoom transform while preserving color properties
                     var zoomTransform = transform
                     let scale: CGFloat = 1.5
                     let scaleTransform = CGAffineTransform(scaleX: scale, y: scale)
-                    
+
                     // Center the scaling
                     let tx = (naturalSize.width * (scale - 1)) / 2
                     let ty = (naturalSize.height * (scale - 1)) / 2
                     let centeringTransform = CGAffineTransform(translationX: -tx, y: -ty)
-                    
+
                     // Combine transforms while preserving color properties
                     zoomTransform = transform
                         .concatenating(centeringTransform)
                         .concatenating(scaleTransform)
-                    
+
                     // Handle zoom in
                     let zoomInStart = CMTime(seconds: clip.startTime + zoomConfig.startZoomIn, preferredTimescale: 600)
-                    
+
                     // Set color properties for initial state
                     layerInstruction.setOpacity(1.0, at: currentTime)
-                    
+
                     if let zoomInComplete = zoomConfig.zoomInComplete {
                         let zoomInEnd = CMTime(seconds: clip.startTime + zoomInComplete, preferredTimescale: 600)
                         // Apply transform ramp with preserved color properties
@@ -128,11 +141,11 @@ class VideoEditViewModel: ObservableObject {
                         layerInstruction.setTransform(zoomTransform, at: zoomInStart)
                         layerInstruction.setOpacity(1.0, at: zoomInStart)
                     }
-                    
+
                     // Handle zoom out if specified
                     if let startZoomOut = zoomConfig.startZoomOut {
                         let zoomOutStart = CMTime(seconds: clip.startTime + startZoomOut, preferredTimescale: 600)
-                        
+
                         if let zoomOutComplete = zoomConfig.zoomOutComplete {
                             let zoomOutEnd = CMTime(seconds: clip.startTime + zoomOutComplete, preferredTimescale: 600)
                             // Apply transform ramp with preserved color properties
@@ -154,10 +167,10 @@ class VideoEditViewModel: ObservableObject {
                     layerInstruction.setTransform(transform, at: currentTime)
                     layerInstruction.setOpacity(1.0, at: currentTime)
                 }
-                
+
                 instruction.layerInstructions = [layerInstruction]
                 instructions.append(instruction)
-                
+
                 // Set video composition render size if not already set
                 if videoComposition.renderSize == .zero {
                     let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
@@ -166,11 +179,11 @@ class VideoEditViewModel: ObservableObject {
                         height: isVideoPortrait ? naturalSize.width : naturalSize.height
                     )
                 }
-                
+
                 currentTime = currentTime + clipDuration
             }
         }
-        
+
         videoComposition.instructions = instructions
         return videoComposition
     }
@@ -178,65 +191,65 @@ class VideoEditViewModel: ObservableObject {
     @MainActor
     func addClip(from url: URL) async throws {
         isProcessing = true
-        
+
         do {
             let asset = AVURLAsset(url: url)
-            
+
             // Generate thumbnail for new clip asynchronously
             let imageGenerator = AVAssetImageGenerator(asset: asset)
             imageGenerator.appliesPreferredTrackTransform = true
             imageGenerator.maximumSize = CGSize(width: 200, height: 200)
             imageGenerator.requestedTimeToleranceBefore = .zero
             imageGenerator.requestedTimeToleranceAfter = .zero
-            
+
             // Start thumbnail generation early
             let thumbnailTask = Task {
                 let time = CMTime(seconds: 0.03, preferredTimescale: 600)
                 let image = try await imageGenerator.image(at: time)
                 return UIImage(cgImage: image.image)
             }
-            
+
             // Create composition if it doesn't exist
             let newComposition = composition ?? AVMutableComposition()
             var currentTime = CMTime(seconds: totalDuration, preferredTimescale: 600)
-            
+
             // Process the new clip
             let videoTracks = try await asset.loadTracks(withMediaType: AVMediaType.video)
             guard let videoTrack = videoTracks.first else {
                 throw VideoError.noVideoTrack
             }
-            
+
             let assetDuration = try await asset.load(.duration)
-            
+
             // Add video track
             let compositionVideoTrack = newComposition.addMutableTrack(
                 withMediaType: AVMediaType.video,
                 preferredTrackID: kCMPersistentTrackID_Invalid
             )
-            
+
             try compositionVideoTrack?.insertTimeRange(
                 CMTimeRange(start: .zero, duration: assetDuration),
                 of: videoTrack,
                 at: currentTime
             )
-            
+
             // Add audio track if available
             if let audioTrack = try await asset.loadTracks(withMediaType: AVMediaType.audio).first {
                 let compositionAudioTrack = newComposition.addMutableTrack(
                     withMediaType: AVMediaType.audio,
                     preferredTrackID: kCMPersistentTrackID_Invalid
                 )
-                
+
                 try compositionAudioTrack?.insertTimeRange(
                     CMTimeRange(start: .zero, duration: assetDuration),
                     of: audioTrack,
                     at: currentTime
                 )
             }
-            
+
             // Wait for thumbnail generation to complete
             let thumbnail = try await thumbnailTask.value
-            
+
             // Create clip model for the new clip
             let newClip = VideoClip(
                 asset: asset,
@@ -246,38 +259,24 @@ class VideoEditViewModel: ObservableObject {
                 assetStartTime: 0,
                 assetDuration: assetDuration.seconds
             )
-            
+
+            // Add clip and start pose detection
+            clips.append(newClip)
+            startPoseDetection(for: newClip)
+
             // Update state
             composition = newComposition
-            clips.append(newClip)
-            selectedClipIndex = clips.count - 1
             totalDuration = (currentTime + assetDuration).seconds
-            
-            // Setup video composition using the helper
-            let videoComposition = try await setupVideoComposition(for: newComposition, clips: clips)
-            
-            // Create new player item with the updated composition
-            let playerItem = AVPlayerItem(asset: newComposition)
-            playerItem.videoComposition = videoComposition
-            
-            if let player = player {
-                player.replaceCurrentItem(with: playerItem)
-            } else {
-                player = AVPlayer(playerItem: playerItem)
-            }
-            
-            // Setup time observer if needed
-            if timeObserver == nil {
-                setupTimeObserver()
-            }
-            
-            player?.play()
-            isProcessing = false
+
+            // Update player
+            await updatePlayer()
+
         } catch {
-            print("Error in addClip: \(error.localizedDescription)")
-            isProcessing = false
+            print("Error adding clip: \(error)")
             throw error
         }
+
+        isProcessing = false
     }
 
     private func updatePlayer() {
@@ -528,77 +527,77 @@ class VideoEditViewModel: ObservableObject {
         print("Starting composition rebuild")
         let newComposition = AVMutableComposition()
         var currentTime = CMTime.zero
-        
+
         // Process each clip
         for (index, clip) in clips.enumerated() {
             print("Processing clip \(index) with startTime: \(clip.startTime), endTime: \(clip.endTime)")
-            
+
             if let videoTrack = try await clip.asset.loadTracks(withMediaType: .video).first {
                 // Add video track
                 let compositionVideoTrack = newComposition.addMutableTrack(
                     withMediaType: .video,
                     preferredTrackID: kCMPersistentTrackID_Invalid
                 )
-                
+
                 let timeRange = CMTimeRange(
                     start: CMTime(seconds: clip.assetStartTime, preferredTimescale: 600),
                     duration: CMTime(seconds: clip.assetDuration, preferredTimescale: 600)
                 )
-                
+
                 try compositionVideoTrack?.insertTimeRange(
                     timeRange,
                     of: videoTrack,
                     at: currentTime
                 )
-                
+
                 // Add audio if available
                 if let audioTrack = try await clip.asset.loadTracks(withMediaType: .audio).first {
                     let compositionAudioTrack = newComposition.addMutableTrack(
                         withMediaType: .audio,
                         preferredTrackID: kCMPersistentTrackID_Invalid
                     )
-                    
+
                     try compositionAudioTrack?.insertTimeRange(
                         timeRange,
                         of: audioTrack,
                         at: currentTime
                     )
                 }
-                
+
                 currentTime = currentTime + CMTime(seconds: clip.assetDuration, preferredTimescale: 600)
             }
         }
-        
+
         // Setup video composition using the helper
         let videoComposition = try await setupVideoComposition(for: newComposition, clips: clips)
-        
+
         await MainActor.run {
             // Update the composition
             self.composition = newComposition
             let newDuration = currentTime.seconds
             totalDuration = newDuration
-            
+
             // Ensure current position is within valid range
             currentPosition = min(currentPosition, newDuration)
             if currentPosition >= newDuration {
                 currentPosition = max(0, newDuration - 0.1)
             }
-            
+
             // Create new player item with the updated composition
             let playerItem = AVPlayerItem(asset: newComposition)
             playerItem.videoComposition = videoComposition
-            
+
             if let player = player {
                 player.replaceCurrentItem(with: playerItem)
             } else {
                 player = AVPlayer(playerItem: playerItem)
             }
-            
+
             // Setup time observer if needed
             if timeObserver == nil {
                 setupTimeObserver()
             }
-            
+
             // Seek to current position and play
             Task {
                 await player?.seek(
@@ -954,41 +953,105 @@ class VideoEditViewModel: ObservableObject {
         var updatedClip = clips[index]
         updatedClip.zoomConfig = config
         clips[index] = updatedClip
-        
+
         // Rebuild the composition to apply the zoom effect
         Task {
             await setupPlayerWithComposition()
         }
     }
-}
 
-// MARK: - Error Types
+    private func startPoseDetection(for clip: VideoClip) {
+        Task {
+            do {
+                print("🏃‍♂️ Starting pose detection for clip: \(clip.id)")
+                var updatedClip = clip
+                updatedClip.poseDetectionStatus = .inProgress
+                updateClip(updatedClip)
 
-enum VideoError: LocalizedError {
-    case compositionCreationFailed
-    case noVideoTrack
-    case trackCreationFailed
-    case noComposition
-    case exportSessionCreationFailed
-    case exportFailed
-    case exportCancelled
+                let results = try await poseDetectionService.detectPoses(for: clip)
+                print("✅ Pose detection completed. Found \(results.count) pose frames")
 
-    var errorDescription: String? {
-        switch self {
-        case .compositionCreationFailed:
-            return "Failed to create video composition"
-        case .noVideoTrack:
-            return "No video track found in asset"
-        case .trackCreationFailed:
-            return "Failed to create composition track"
-        case .noComposition:
-            return "No composition available for export"
-        case .exportSessionCreationFailed:
-            return "Failed to create export session"
-        case .exportFailed:
-            return "Failed to export video"
-        case .exportCancelled:
-            return "Video export was cancelled"
+                // Detect sets from pose results
+                let sets = setDetectionService.detectSets(from: results)
+                print("💪 Set detection completed. Found \(sets.count) sets:")
+                for (index, set) in sets.enumerated() {
+                    print("  Set \(index + 1): \(set.reps) reps, from \(String(format: "%.2f", set.startTime))s to \(String(format: "%.2f", set.endTime))s")
+                }
+
+                await MainActor.run {
+                    detectedSets = sets
+                }
+
+                updatedClip.poseResults = results
+                updatedClip.poseDetectionStatus = .completed
+                updateClip(updatedClip)
+                print("🎬 Finished processing clip: \(clip.id)")
+            } catch {
+                print("❌ Error during pose/set detection: \(error)")
+                var updatedClip = clip
+                updatedClip.poseDetectionStatus = .failed(error)
+                updateClip(updatedClip)
+            }
+        }
+    }
+
+    private func updateClip(_ updatedClip: VideoClip) {
+        if let index = clips.firstIndex(where: { $0.id == updatedClip.id }) {
+            clips[index] = updatedClip
+        }
+    }
+
+    func export() async throws -> URL {
+        // Wait for all pose detection to complete
+        for clip in clips {
+            while clip.poseDetectionStatus == .pending || clip.poseDetectionStatus == .inProgress {
+                try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            }
+
+            if case let .failed(error) = clip.poseDetectionStatus {
+                throw error
+            }
+        }
+
+        // Create temporary file URL
+        let tempDir = FileManager.default.temporaryDirectory
+        let outputURL = tempDir.appendingPathComponent(UUID().uuidString).appendingPathExtension("mp4")
+
+        // Ensure composition and video composition are ready
+        guard let composition = composition else {
+            throw VideoError.noComposition
+        }
+
+        let videoComposition = try await setupVideoComposition(for: composition, clips: clips)
+
+        // Configure export session
+        guard let exportSession = AVAssetExportSession(
+            asset: composition,
+            presetName: AVAssetExportPresetHighestQuality
+        ) else {
+            throw VideoError.exportSessionCreationFailed
+        }
+
+        exportSession.outputURL = outputURL
+        exportSession.outputFileType = .mp4
+        exportSession.videoComposition = videoComposition
+
+        // Export the video
+        await exportSession.export()
+
+        guard exportSession.status == .completed else {
+            throw exportSession.error ?? VideoError.exportFailed
+        }
+
+        return outputURL
+    }
+
+    deinit {
+        // Cancel any ongoing pose detection tasks
+        Task { @MainActor in
+            for clip in clips {
+                await poseDetectionService.cancelDetection(for: clip.id)
+            }
         }
     }
 }

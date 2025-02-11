@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CreateSelectionView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedPath: NavigationPath = NavigationPath()
+    @State private var selectedPath: NavigationPath = .init()
 
     var body: some View {
         NavigationStack(path: $selectedPath) {

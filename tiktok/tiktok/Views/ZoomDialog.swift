@@ -9,7 +9,7 @@ struct ZoomDialog: View {
     let clipDuration: Double
     let existingConfig: ZoomConfig?
     let onSave: (ZoomConfig) -> Void
-    
+
     init(clipDuration: Double, existingConfig: ZoomConfig? = nil, onSave: @escaping (ZoomConfig) -> Void) {
         self.clipDuration = clipDuration
         self.existingConfig = existingConfig
@@ -19,26 +19,26 @@ struct ZoomDialog: View {
         _startZoomOut = State(initialValue: existingConfig?.startZoomOut)
         _zoomOutComplete = State(initialValue: existingConfig?.zoomOutComplete)
     }
-    
+
     var body: some View {
         NavigationStack {
             Form {
                 Section(header: Text("Zoom In")) {
                     HStack {
                         Text("Start")
-                        Slider(value: $startZoomIn, in: 0...clipDuration) {
+                        Slider(value: $startZoomIn, in: 0 ... clipDuration) {
                             Text("Start Zoom In")
                         }
                         Text(String(format: "%.1fs", startZoomIn))
                     }
-                    
+
                     Toggle(isOn: Binding(
                         get: { zoomInComplete != nil },
                         set: { if !$0 { zoomInComplete = nil } else { zoomInComplete = startZoomIn + 1 } }
                     )) {
                         Text("Set Zoom In Complete")
                     }
-                    
+
                     if zoomInComplete != nil {
                         HStack {
                             Text("Complete")
@@ -47,26 +47,26 @@ struct ZoomDialog: View {
                                     get: { zoomInComplete ?? startZoomIn },
                                     set: { zoomInComplete = $0 }
                                 ),
-                                in: startZoomIn...clipDuration
+                                in: startZoomIn ... clipDuration
                             )
                             Text(String(format: "%.1fs", zoomInComplete ?? 0))
                         }
                     }
                 }
-                
+
                 Section(header: Text("Zoom Out")) {
                     Toggle(isOn: Binding(
                         get: { startZoomOut != nil },
-                        set: { if !$0 { 
+                        set: { if !$0 {
                             startZoomOut = nil
-                            zoomOutComplete = nil 
-                        } else { 
+                            zoomOutComplete = nil
+                        } else {
                             startZoomOut = (zoomInComplete ?? startZoomIn) + 1
                         }}
                     )) {
                         Text("Add Zoom Out")
                     }
-                    
+
                     if startZoomOut != nil {
                         HStack {
                             Text("Start")
@@ -75,18 +75,18 @@ struct ZoomDialog: View {
                                     get: { startZoomOut ?? (zoomInComplete ?? startZoomIn) + 1 },
                                     set: { startZoomOut = $0 }
                                 ),
-                                in: (zoomInComplete ?? startZoomIn)...clipDuration
+                                in: (zoomInComplete ?? startZoomIn) ... clipDuration
                             )
                             Text(String(format: "%.1fs", startZoomOut ?? 0))
                         }
-                        
+
                         Toggle(isOn: Binding(
                             get: { zoomOutComplete != nil },
                             set: { if !$0 { zoomOutComplete = nil } else { zoomOutComplete = startZoomOut! + 1 } }
                         )) {
                             Text("Set Zoom Out Complete")
                         }
-                        
+
                         if zoomOutComplete != nil {
                             HStack {
                                 Text("Complete")
@@ -95,7 +95,7 @@ struct ZoomDialog: View {
                                         get: { zoomOutComplete ?? startZoomOut! },
                                         set: { zoomOutComplete = $0 }
                                     ),
-                                    in: startZoomOut!...clipDuration
+                                    in: startZoomOut! ... clipDuration
                                 )
                                 Text(String(format: "%.1fs", zoomOutComplete ?? 0))
                             }
@@ -132,4 +132,4 @@ struct ZoomDialog: View {
     ZoomDialog(clipDuration: 10.0) { config in
         print("Zoom config saved: \(config)")
     }
-} 
+}

@@ -12,4 +12,4 @@ class MLKitPoseDetector: PoseDetector {
         try handler.perform([request])
         return request.results?.first
     }
-} 
+}
