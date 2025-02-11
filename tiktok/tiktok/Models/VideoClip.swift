@@ -10,6 +10,7 @@ struct VideoClip: Identifiable {
     var volume: Double
     let assetStartTime: Double // Original time in asset
     var assetDuration: Double // Original duration in asset
+    var zoomConfig: ZoomConfig?
 
     init(asset: AVAsset, startTime: Double = 0, endTime: Double? = nil, thumbnail: UIImage? = nil, assetStartTime: Double = 0, assetDuration: Double? = nil) {
         id = UUID()
@@ -24,5 +25,20 @@ struct VideoClip: Identifiable {
         } else {
             self.assetDuration = (endTime ?? 0) - startTime
         }
+        self.zoomConfig = nil
+    }
+}
+
+struct ZoomConfig {
+    var startZoomIn: Double // Required - when to start zooming in
+    var zoomInComplete: Double? // Optional - when zoom in completes
+    var startZoomOut: Double? // Optional - when to start zooming out
+    var zoomOutComplete: Double? // Optional - when zoom out completes
+    
+    init(startZoomIn: Double, zoomInComplete: Double? = nil, startZoomOut: Double? = nil, zoomOutComplete: Double? = nil) {
+        self.startZoomIn = startZoomIn
+        self.zoomInComplete = zoomInComplete
+        self.startZoomOut = startZoomOut
+        self.zoomOutComplete = zoomOutComplete
     }
 }

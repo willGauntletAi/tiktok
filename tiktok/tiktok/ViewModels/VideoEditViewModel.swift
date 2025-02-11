@@ -266,9 +266,10 @@ class VideoEditViewModel: ObservableObject {
                 setupTimeObserver()
             }
 
-            // Set initial playback rate and volume
-            player?.rate = 1.0
-            player?.volume = 1.0
+            // Enable player controls and start playback
+            player?.allowsExternalPlayback = true
+            player?.appliesMediaSelectionCriteriaAutomatically = true
+            player?.preventsDisplaySleepDuringVideoPlayback = true
             player?.play()
         }
     }
@@ -669,7 +670,58 @@ class VideoEditViewModel: ObservableObject {
                     )
 
                     let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionVideoTrack!)
-                    layerInstruction.setTransform(transform, at: .zero)
+                    
+                    // Handle zoom effect if configured
+                    if let zoomConfig = clip.zoomConfig {
+                        // Initial transform
+                        layerInstruction.setTransform(transform, at: currentTime)
+                        
+                        // Calculate zoom transform
+                        var zoomTransform = transform
+                        let scale: CGFloat = 1.5
+                        
+                        // Create a scaling transform
+                        let scaleTransform = CGAffineTransform(scaleX: scale, y: scale)
+                        // Combine with original transform
+                        zoomTransform = transform.concatenating(scaleTransform)
+                        
+                        // Handle zoom in
+                        let zoomInStart = CMTime(seconds: clip.startTime + zoomConfig.startZoomIn, preferredTimescale: 600)
+                        
+                        if let zoomInComplete = zoomConfig.zoomInComplete {
+                            // If we have a completion time, create a smooth ramp
+                            let zoomInEnd = CMTime(seconds: clip.startTime + zoomInComplete, preferredTimescale: 600)
+                            layerInstruction.setTransformRamp(
+                                fromStart: transform,
+                                toEnd: zoomTransform,
+                                timeRange: CMTimeRange(start: zoomInStart, end: zoomInEnd)
+                            )
+                        } else {
+                            // If no completion time, make it instant
+                            layerInstruction.setTransform(zoomTransform, at: zoomInStart)
+                        }
+                        
+                        // Handle zoom out if specified
+                        if let startZoomOut = zoomConfig.startZoomOut {
+                            let zoomOutStart = CMTime(seconds: clip.startTime + startZoomOut, preferredTimescale: 600)
+                            
+                            if let zoomOutComplete = zoomConfig.zoomOutComplete {
+                                // If we have a completion time, create a smooth ramp
+                                let zoomOutEnd = CMTime(seconds: clip.startTime + zoomOutComplete, preferredTimescale: 600)
+                                layerInstruction.setTransformRamp(
+                                    fromStart: zoomTransform,
+                                    toEnd: transform,
+                                    timeRange: CMTimeRange(start: zoomOutStart, end: zoomOutEnd)
+                                )
+                            } else {
+                                // If no completion time, make it instant
+                                layerInstruction.setTransform(transform, at: zoomOutStart)
+                            }
+                        }
+                    } else {
+                        layerInstruction.setTransform(transform, at: .zero)
+                    }
+                    
                     instruction.layerInstructions = [layerInstruction]
                     instructions.append(instruction)
 
@@ -1102,6 +1154,19 @@ class VideoEditViewModel: ObservableObject {
 
         videoComposition.renderSize = CGSize(width: renderWidth, height: renderHeight)
         videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+    }
+
+    @MainActor
+    func updateZoomConfig(at index: Int, config: ZoomConfig?) {
+        guard index < clips.count else { return }
+        var updatedClip = clips[index]
+        updatedClip.zoomConfig = config
+        clips[index] = updatedClip
+        
+        // Rebuild the composition to apply the zoom effect
+        Task {
+            await setupPlayerWithComposition()
+        }
     }
 }
 

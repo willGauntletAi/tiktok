@@ -87,16 +87,50 @@ struct VideoPicker: UIViewControllerRepresentable {
     }
 }
 
+struct VideoClipContextMenu: View {
+    let clip: VideoClip
+    let index: Int
+    let viewModel: VideoEditViewModel
+    @Binding var selectedClipForZoom: Int?
+    @Binding var showZoomDialog: Bool
+    @Binding var clipToDelete: Int?
+    @Binding var showingDeleteAlert: Bool
+    
+    var body: some View {
+        Button(action: {
+            selectedClipForZoom = index
+            showZoomDialog = true
+        }) {
+            Label("Add/Edit Zoom", systemImage: "plus.magnifyingglass")
+        }
+        
+        if clip.zoomConfig != nil {
+            Button(role: .destructive, action: {
+                viewModel.updateZoomConfig(at: index, config: nil)
+            }) {
+                Label("Remove Zoom", systemImage: "minus.magnifyingglass")
+            }
+        }
+        
+        Divider()
+        
+        Button(role: .destructive, action: {
+            clipToDelete = index
+            showingDeleteAlert = true
+        }) {
+            Label("Delete", systemImage: "trash")
+        }
+    }
+}
+
 struct VideoTimelineView: View {
     @ObservedObject var viewModel: VideoEditViewModel
     @Binding var currentPosition: Double
     @State private var showingDeleteAlert = false
     @State private var clipToDelete: Int?
     @State private var isLoadingThumbnails = true
-    @State private var totalWidth: CGFloat = 0
-    @State private var isDragging = false
-    @State private var dragPosition: Double = 0
-    @State private var seekTask: Task<Void, Never>?
+    @State private var showZoomDialog = false
+    @State private var selectedClipForZoom: Int?
 
     private let thumbnailHeight: CGFloat = 60
     private let positionIndicatorWidth: CGFloat = 2
@@ -111,31 +145,7 @@ struct VideoTimelineView: View {
                         Rectangle()
                             .fill(Color.black.opacity(0.2))
                             .frame(height: thumbnailHeight)
-
-                        // Seek gesture overlay
-                        Rectangle()
-                            .fill(Color.clear)
-                            .frame(height: thumbnailHeight)
-                            .contentShape(Rectangle())
-                            .gesture(
-                                DragGesture(minimumDistance: 0)
-                                    .onChanged { value in
-                                        isDragging = true
-                                        let progress = max(0, min(1, value.location.x / geometry.size.width))
-                                        let newPosition = progress * viewModel.totalDuration
-                                        dragPosition = newPosition
-                                        seekToTime(newPosition)
-                                    }
-                                    .onEnded { value in
-                                        let progress = max(0, min(1, value.location.x / geometry.size.width))
-                                        let newPosition = progress * viewModel.totalDuration
-                                        currentPosition = newPosition
-                                        dragPosition = newPosition
-                                        seekToTime(newPosition)
-                                        isDragging = false
-                                    }
-                            )
-                            .allowsHitTesting(true)
+                            .allowsHitTesting(false)
 
                         // Clips thumbnails with buttons on top
                         HStack(spacing: 0) {
@@ -160,7 +170,17 @@ struct VideoTimelineView: View {
                                             .onTapGesture {
                                                 viewModel.selectedClipIndex = index
                                             }
-                                            .allowsHitTesting(false) // Let seek gesture handle taps
+                                            .contextMenu {
+                                                VideoClipContextMenu(
+                                                    clip: clip,
+                                                    index: index,
+                                                    viewModel: viewModel,
+                                                    selectedClipForZoom: $selectedClipForZoom,
+                                                    showZoomDialog: $showZoomDialog,
+                                                    clipToDelete: $clipToDelete,
+                                                    showingDeleteAlert: $showingDeleteAlert
+                                                )
+                                            }
                                     } else {
                                         Rectangle()
                                             .fill(Color.gray.opacity(0.3))
@@ -168,25 +188,7 @@ struct VideoTimelineView: View {
                                                 width: clipWidth(for: clip, in: geometry.size.width),
                                                 height: thumbnailHeight
                                             )
-                                            .allowsHitTesting(false) // Let seek gesture handle taps
                                     }
-
-                                    // Delete button
-                                    VStack {
-                                        Button(action: {
-                                            clipToDelete = index
-                                            showingDeleteAlert = true
-                                        }) {
-                                            Image(systemName: "xmark.circle.fill")
-                                                .foregroundColor(.red)
-                                                .background(Circle().fill(Color.white))
-                                                .padding(4)
-                                        }
-                                        .allowsHitTesting(true) // Ensure button remains tappable
-
-                                        Spacer()
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .trailing)
 
                                     // Add swap button if this isn't the last clip
                                     if index < viewModel.clips.count - 1 {
@@ -199,32 +201,27 @@ struct VideoTimelineView: View {
                                                 .foregroundColor(.white)
                                         }
                                         .offset(x: swapButtonSize / 2)
-                                        .allowsHitTesting(true) // Ensure button remains tappable
                                     }
                                 }
                             }
                         }
 
-                        // Position indicator
+                        // Position indicator (read-only)
                         Rectangle()
                             .fill(Color.white)
                             .frame(width: positionIndicatorWidth, height: thumbnailHeight + 20)
                             .offset(
-                                x: geometry.size.width
-                                    * CGFloat(
-                                        (isDragging ? dragPosition : currentPosition) / max(viewModel.totalDuration, 0.001)
-                                    ),
+                                x: geometry.size.width * CGFloat(currentPosition / max(viewModel.totalDuration, 0.001)),
                                 y: -10
                             )
                             .shadow(radius: 2)
-                            .allowsHitTesting(false) // Don't let indicator block gestures
                     }
                 }
                 .frame(height: thumbnailHeight)
 
                 // Time indicators
                 HStack {
-                    Text(timeString(from: isDragging ? dragPosition : currentPosition))
+                    Text(timeString(from: currentPosition))
                     Spacer()
                     Text(timeString(from: viewModel.totalDuration))
                 }
@@ -232,12 +229,6 @@ struct VideoTimelineView: View {
                 .foregroundColor(.gray)
                 .padding(.horizontal)
             }
-        }
-        .onAppear {
-            startPositionTimer()
-        }
-        .onDisappear {
-            seekTask?.cancel()
         }
         .alert("Delete Clip", isPresented: $showingDeleteAlert) {
             Button("Delete", role: .destructive) {
@@ -249,33 +240,18 @@ struct VideoTimelineView: View {
         } message: {
             Text("Are you sure you want to delete this clip?")
         }
-    }
-
-    private func seekToTime(_ time: Double) {
-        guard let player = viewModel.player else { return }
-        let targetTime = CMTime(seconds: time, preferredTimescale: 600)
-
-        Task {
-            await player.seek(
-                to: targetTime,
-                toleranceBefore: .zero,
-                toleranceAfter: .zero
-            )
-        }
-    }
-
-    private func startPositionTimer() {
-        // Create a timer that updates every 1/30th of a second
-        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [self] _ in
-            Task { @MainActor in
-                guard !isDragging,
-                      let player = viewModel.player else { return }
-                currentPosition = player.currentTime().seconds
+        .sheet(isPresented: $showZoomDialog) {
+            if let index = selectedClipForZoom,
+               index < viewModel.clips.count {
+                let clip = viewModel.clips[index]
+                ZoomDialog(
+                    clipDuration: clip.assetDuration,
+                    existingConfig: clip.zoomConfig
+                ) { config in
+                    viewModel.updateZoomConfig(at: index, config: config)
+                }
             }
         }
-
-        // Make sure timer continues to fire when scrolling
-        RunLoop.current.add(timer, forMode: .common)
     }
 
     private func clipWidth(for clip: VideoClip, in totalWidth: CGFloat) -> CGFloat {
@@ -304,6 +280,7 @@ struct VideoEditView: View {
     @State private var isAddingClip = false
     @State private var showCamera = false
     @State private var showVideoPicker = false
+    @State private var showSongGeneration = false
     @Environment(\.dismiss) private var dismiss
     var onVideoEdited: ((URL) -> Void)?
 
@@ -314,7 +291,7 @@ struct VideoEditView: View {
                     ProgressView("Processing video...")
                         .progressViewStyle(CircularProgressViewStyle())
                 } else if let player = viewModel.player, viewModel.selectedClip != nil {
-                    // Video preview
+                    // Video preview with native AVKit controls
                     VideoPlayer(player: player)
                         .frame(maxWidth: .infinity)
                         .frame(height: 400)
@@ -330,7 +307,7 @@ struct VideoEditView: View {
                             player.pause()
                         }
                         .allowsHitTesting(true)
-                        .zIndex(0)
+                        .zIndex(1)
                 } else {
                     // Initial state - show clips list
                     Text("Add clips to start editing")
@@ -361,6 +338,14 @@ struct VideoEditView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
                         .disabled(isAddingClip || viewModel.isProcessing)
+
+                        // Generate Music button
+                        Button("Generate Music") {
+                            showSongGeneration = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.purple)
+                        .disabled(viewModel.isProcessing)
 
                         // Split button
                         if !viewModel.clips.isEmpty {
@@ -448,6 +433,13 @@ struct VideoEditView: View {
                     }
                 }
             })
+        }
+        .sheet(isPresented: $showSongGeneration) {
+            SongGenerationView { storageRef in
+                // Handle the generated song
+                print("Generated song at: \(storageRef)")
+                // TODO: Add the song to the video
+            }
         }
     }
 }
