@@ -6,7 +6,7 @@ struct ExerciseCompletionView: View {
     let exercise: Exercise
     @Environment(\.presentationMode) var presentationMode
     @StateObject private var viewModel: ExerciseCompletionViewModel
-    @State private var sets: [ExerciseSet] = [ExerciseSet(reps: 0, weight: nil, notes: "")]
+    @State private var sets: [ExerciseSet] = [ExerciseSet(reps: 0)]
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""

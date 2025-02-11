@@ -2,6 +2,15 @@ import Foundation
 import AVFoundation
 import Vision
 
+enum MovementDirection {
+    case up
+    case down
+    
+    func opposite() -> MovementDirection {
+        self == .up ? .down : .up
+    }
+}
+
 class SetDetectionService {
     private var videoAsset: AVAsset?
     private var poseObservations: [VNHumanBodyPoseObservation] = []
@@ -177,12 +186,20 @@ class SetDetectionService {
         }
     }
     
+    private let visionQueue = DispatchQueue(label: "com.gauntlet.vision")
+    private let poseDetector: PoseDetector
+    private var repState = RepState()
+    
+    init(poseDetector: PoseDetector = MLKitPoseDetector()) {
+        self.poseDetector = poseDetector
+    }
+    
     /// Analyzes a video clip to detect exercise sets
     /// - Parameters:
     ///   - videoURL: URL of the video to analyze
     /// - Returns: Array of detected exercise sets
     /// - Throws: SetDetectionError if analysis fails
-    func detectSets(from videoURL: URL) async throws -> ExerciseSets {
+    func detectSets(from videoURL: URL) async throws -> DetectedExerciseSets {
         let asset = AVURLAsset(url: videoURL)
         
         self.videoAsset = asset
@@ -227,8 +244,8 @@ class SetDetectionService {
         return observations
     }
     
-    private func processPoseObservations(_ observations: [VNHumanBodyPoseObservation]) async throws -> ExerciseSets {
-        var sets: [ExerciseSet] = []
+    private func processPoseObservations(_ observations: [VNHumanBodyPoseObservation]) async throws -> DetectedExerciseSets {
+        var sets: [DetectedExerciseSet] = []
         var currentSetStartIndex: Int?
         var repCount = 0
         var lastAnalysis: FrameAnalysis?
@@ -259,7 +276,7 @@ class SetDetectionService {
                     let startTime = Double(startIndex) / 30.0
                     let endTime = Double(index) / 30.0
                     
-                    sets.append(ExerciseSet(
+                    sets.append(DetectedExerciseSet(
                         reps: repCount,
                         startTime: startTime,
                         endTime: endTime
@@ -285,7 +302,7 @@ class SetDetectionService {
             let startTime = Double(startIndex) / 30.0
             let endTime = Double(observations.count - 1) / 30.0
             
-            sets.append(ExerciseSet(
+            sets.append(DetectedExerciseSet(
                 reps: repCount,
                 startTime: startTime,
                 endTime: endTime
@@ -299,13 +316,4 @@ class SetDetectionService {
 enum SetDetectionError: Error {
     case invalidVideoAsset
     case analysisFailure
-}
-
-private enum MovementDirection {
-    case up
-    case down
-    
-    func opposite() -> MovementDirection {
-        return self == .up ? .down : .up
-    }
 } 

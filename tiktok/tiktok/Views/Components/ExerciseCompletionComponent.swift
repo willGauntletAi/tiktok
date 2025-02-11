@@ -170,7 +170,7 @@ struct ExerciseCompletionComponent: View {
                     }
 
                     Button(action: {
-                        sets.append(ExerciseSet(reps: 0, weight: nil, notes: ""))
+                        sets.append(ExerciseSet(reps: 0))
                     }) {
                         Label("Add Set", systemImage: "plus.circle.fill")
                             .frame(maxWidth: .infinity)

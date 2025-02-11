@@ -11,6 +11,7 @@ struct ExerciseState {
 
 class WorkoutCompletionViewModel: ObservableObject {
     let workoutId: String
+    let workout: Workout
     @Published var isLoadingHistory = false
     @Published var recentCompletions: [WorkoutCompletion] = []
     @Published var hasMoreHistory = false
@@ -30,65 +31,63 @@ class WorkoutCompletionViewModel: ObservableObject {
 
     init(workoutId: String, workout: Workout) {
         self.workoutId = workoutId
-        // Initialize exercise states
-        let initialStates = workout.exercises.reduce(into: [:]) { dict, exercise in
-            dict[exercise.id] = ExerciseState(
-                sets: [ExerciseSet(reps: 0, weight: nil, notes: "")],
-                isLoading: false,
-                showError: false,
-                errorMessage: ""
-            )
-        }
-        exerciseStates = initialStates
+        self.workout = workout
     }
 
+    @MainActor
     func startWorkout() async throws {
         isLoading = true
         defer { isLoading = false }
 
         guard let userId = Auth.auth().currentUser?.uid else {
-            throw NSError(
-                domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not logged in"]
-            )
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not logged in"])
         }
 
-        let workoutCompletion =
-            [
-                "workoutId": workoutId,
-                "userId": userId,
-                "exerciseCompletions": [],
-                "startedAt": Timestamp(),
-                "notes": "",
-            ] as [String: Any]
+        let now = Date()
+        let data: [String: Any] = [
+            "workoutId": workoutId,
+            "userId": userId,
+            "exerciseCompletions": [],
+            "startedAt": Timestamp(date: now),
+            "notes": "",
+        ]
 
-        let docRef = try await db.collection("workoutCompletions").addDocument(data: workoutCompletion)
+        let docRef = try await db.collection("workoutCompletions").addDocument(data: data)
         workoutCompletionId = docRef.documentID
-        startTime = Date()
+        startTime = now
         isStarted = true
+
+        // Initialize exercise states
+        for exercise in workout.exercises {
+            exerciseStates[exercise.id] = ExerciseState(
+                sets: [ExerciseSet(reps: 0)],
+                isLoading: false,
+                showError: false,
+                errorMessage: ""
+            )
+        }
     }
 
+    @MainActor
     func cancelWorkout() async throws {
         isLoading = true
         defer { isLoading = false }
 
-        if let workoutCompletionId = workoutCompletionId {
-            try await db.collection("workoutCompletions").document(workoutCompletionId).delete()
-            self.workoutCompletionId = nil
-            isStarted = false
-            startTime = nil
-        }
-    }
-
-    func checkWorkoutCompletion() async throws {
         guard let workoutCompletionId = workoutCompletionId else { return }
 
-        let snapshot = try await db.collection("exerciseCompletions")
-            .whereField("workoutCompletionId", isEqualTo: workoutCompletionId)
-            .getDocuments()
+        try await db.collection("workoutCompletions").document(workoutCompletionId).delete()
+        isStarted = false
+        self.workoutCompletionId = nil
+        startTime = nil
+        exerciseStates = [:]
+    }
 
-        let completedExercises = Set(
-            snapshot.documents.map { $0.data()["exerciseId"] as? String ?? "" })
-        let allExercises = Set(exerciseStates.keys)
+    @MainActor
+    func checkWorkoutCompletion() async throws {
+        guard let workoutCompletionId = workoutCompletionId else { return }
+        
+        let allExercises = Set(workout.exercises.map { $0.id })
+        let completedExercises = Set(exerciseStates.filter { $0.value.sets.allSatisfy { $0.reps > 0 } }.keys)
 
         if completedExercises == allExercises {
             try await db.collection("workoutCompletions").document(workoutCompletionId).updateData([
@@ -124,7 +123,7 @@ class WorkoutCompletionViewModel: ObservableObject {
 
     @MainActor
     func fetchMoreHistory() async {
-        guard !isLoadingHistory, hasMoreHistory, let lastDocument = lastDocument else { return }
+        guard !isLoadingHistory, let lastDocument = lastDocument else { return }
         isLoadingHistory = true
         defer { isLoadingHistory = false }
 
@@ -132,8 +131,8 @@ class WorkoutCompletionViewModel: ObservableObject {
             let query = db.collection("workoutCompletions")
                 .whereField("workoutId", isEqualTo: workoutId)
                 .order(by: "startedAt", descending: true)
-                .limit(to: pageSize)
                 .start(afterDocument: lastDocument)
+                .limit(to: pageSize)
 
             let snapshot = try await query.getDocuments()
             self.lastDocument = snapshot.documents.last
