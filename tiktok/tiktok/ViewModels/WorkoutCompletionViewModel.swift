@@ -9,6 +9,34 @@ struct ExerciseState {
     var errorMessage: String
 }
 
+struct WorkoutCompletionData: Sendable {
+    let workoutId: String
+    let userId: String
+    let exerciseCompletions: [String]
+    let startedAt: Date
+    let notes: String
+    
+    var asDictionary: [String: Any] {
+        [
+            "workoutId": workoutId,
+            "userId": userId,
+            "exerciseCompletions": exerciseCompletions,
+            "startedAt": Timestamp(date: startedAt),
+            "notes": notes
+        ]
+    }
+}
+
+struct WorkoutCompletionUpdateData: Sendable {
+    let finishedAt: Date
+    
+    var asDictionary: [String: Any] {
+        [
+            "finishedAt": Timestamp(date: finishedAt)
+        ]
+    }
+}
+
 class WorkoutCompletionViewModel: ObservableObject {
     let workoutId: String
     let workout: Workout
@@ -44,15 +72,15 @@ class WorkoutCompletionViewModel: ObservableObject {
         }
 
         let now = Date()
-        let data: [String: Any] = [
-            "workoutId": workoutId,
-            "userId": userId,
-            "exerciseCompletions": [],
-            "startedAt": Timestamp(date: now),
-            "notes": "",
-        ]
+        let completionData = WorkoutCompletionData(
+            workoutId: workoutId,
+            userId: userId,
+            exerciseCompletions: [],
+            startedAt: now,
+            notes: ""
+        )
 
-        let docRef = try await db.collection("workoutCompletions").addDocument(data: data)
+        let docRef = try await db.collection("workoutCompletions").addDocument(data: completionData.asDictionary)
         workoutCompletionId = docRef.documentID
         startTime = now
         isStarted = true
@@ -90,9 +118,8 @@ class WorkoutCompletionViewModel: ObservableObject {
         let completedExercises = Set(exerciseStates.filter { $0.value.sets.allSatisfy { $0.reps > 0 } }.keys)
 
         if completedExercises == allExercises {
-            try await db.collection("workoutCompletions").document(workoutCompletionId).updateData([
-                "finishedAt": Timestamp(),
-            ])
+            let updateData = WorkoutCompletionUpdateData(finishedAt: Date())
+            try await db.collection("workoutCompletions").document(workoutCompletionId).updateData(updateData.asDictionary)
         }
     }
 
