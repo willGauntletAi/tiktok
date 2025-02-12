@@ -746,6 +746,26 @@ class VideoEditViewModel: ObservableObject {
         let newComposition = AVMutableComposition()
         var currentTime = CMTime.zero
 
+        // If there are no clips, reset the player and return early
+        if clips.isEmpty {
+            await MainActor.run {
+                // Reset everything
+                self.composition = nil
+                self.totalDuration = 0
+                self.currentPosition = 0
+                
+                // Clean up player
+                if let observer = timeObserver {
+                    player?.removeTimeObserver(observer)
+                    timeObserver = nil
+                }
+                player?.pause()
+                player = nil
+                playerItem = nil
+            }
+            return
+        }
+
         // Process each clip
         for (index, clip) in clips.enumerated() {
             print("Processing clip \(index) with startTime: \(clip.startTime), endTime: \(clip.endTime)")
@@ -786,7 +806,7 @@ class VideoEditViewModel: ObservableObject {
             }
         }
 
-        // Setup video composition using the helper
+        // Only setup video composition if we have clips
         let videoComposition = try await setupVideoComposition(for: newComposition, clips: clips)
 
         await MainActor.run {
