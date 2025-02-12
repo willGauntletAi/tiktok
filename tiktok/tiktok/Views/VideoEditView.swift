@@ -457,7 +457,7 @@ struct VideoEditView: View {
                         Button("Export") {
                             Task {
                                 do {
-                                    let url = try await viewModel.exportVideo()
+                                    let url = try await viewModel.export()
                                     onVideoEdited?(url)
                                     dismiss()
                                 } catch {

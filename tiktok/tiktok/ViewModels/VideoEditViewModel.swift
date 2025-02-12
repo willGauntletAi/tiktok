@@ -239,230 +239,123 @@ class VideoEditViewModel: ObservableObject {
     @MainActor
     func addClip(from url: URL) async throws {
         isProcessing = true
-
+        
         do {
             print("Adding clip from URL: \(url)")
-            print("Checking if file exists: \(FileManager.default.fileExists(atPath: url.path))")
-
+            
             // Create asset with conservative memory options
             let options: [String: Any] = [
                 AVURLAssetPreferPreciseDurationAndTimingKey: true,
-                AVURLAssetAllowsCellularAccessKey: true,
-                // Prevent memory issues on device
-                "AVURLAssetOutOfBandMIMETypeKey": "video/mp4",
-                "AVURLAssetHTTPHeaderFieldsKey": ["Accept": "video/*"],
+                AVURLAssetAllowsCellularAccessKey: true
             ]
-
+            
             let asset = AVURLAsset(url: url, options: options)
-
+            
             // Verify we can load the tracks before proceeding
             let tracks = try await asset.loadTracks(withMediaType: .video)
             guard let videoTrack = tracks.first else {
                 throw VideoError.noVideoTrack
             }
-
-            // Create a documents directory URL for our video files
-            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let videosDirectory = documentsPath.appendingPathComponent("Videos", isDirectory: true)
-
-            // Clean up old files if needed
-            let fileManager = FileManager.default
-            if fileManager.fileExists(atPath: videosDirectory.path) {
-                let contents = try fileManager.contentsOfDirectory(at: videosDirectory, includingPropertiesForKeys: nil)
-                if contents.count > 10 { // Keep only recent files
-                    let oldFiles = try contents.sorted {
-                        try $0.resourceValues(forKeys: [.creationDateKey]).creationDate! < $1.resourceValues(forKeys: [.creationDateKey]).creationDate!
-                    }
-                    for file in oldFiles.prefix(contents.count - 10) {
-                        try? fileManager.removeItem(at: file)
-                    }
-                }
-            } else {
-                try fileManager.createDirectory(at: videosDirectory, withIntermediateDirectories: true)
+            
+            // Generate thumbnail for new clip asynchronously
+            let imageGenerator = AVAssetImageGenerator(asset: asset)
+            imageGenerator.appliesPreferredTrackTransform = true
+            imageGenerator.maximumSize = CGSize(width: 200, height: 200)
+            imageGenerator.requestedTimeToleranceBefore = .zero
+            imageGenerator.requestedTimeToleranceAfter = .zero
+            
+            // Start thumbnail generation early
+            let thumbnailTask = Task {
+                let time = CMTime(seconds: 0.03, preferredTimescale: 600)
+                let image = try await imageGenerator.image(at: time)
+                return UIImage(cgImage: image.image)
             }
-
-            // Create a new URL in the videos directory
-            let destinationURL = videosDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("mp4")
-
-            print("Creating export session to copy file to: \(destinationURL)")
-
-            // Create export session with conservative settings
-            guard let exportSession = AVAssetExportSession(
+            
+            // Create composition if it doesn't exist
+            let newComposition = composition ?? AVMutableComposition()
+            let currentTime = CMTime(seconds: totalDuration, preferredTimescale: 600)
+            
+            let assetDuration = try await asset.load(.duration)
+            print("Asset duration: \(assetDuration.seconds) seconds")
+            
+            // Create a unique track ID for this clip
+            let trackID = clips.count + 1
+            
+            print("Adding video track to composition...")
+            // Add video track with unique ID
+            let compositionVideoTrack = newComposition.addMutableTrack(
+                withMediaType: .video,
+                preferredTrackID: CMPersistentTrackID(trackID)
+            )
+            
+            try compositionVideoTrack?.insertTimeRange(
+                CMTimeRange(start: .zero, duration: assetDuration),
+                of: videoTrack,
+                at: currentTime
+            )
+            
+            // Add audio track if available
+            if let audioTrack = try await asset.loadTracks(withMediaType: .audio).first {
+                print("Adding audio track to composition...")
+                let compositionAudioTrack = newComposition.addMutableTrack(
+                    withMediaType: .audio,
+                    preferredTrackID: CMPersistentTrackID(trackID + 1000)
+                )
+                
+                try compositionAudioTrack?.insertTimeRange(
+                    CMTimeRange(start: .zero, duration: assetDuration),
+                    of: audioTrack,
+                    at: currentTime
+                )
+            }
+            
+            // Wait for thumbnail generation to complete
+            print("Waiting for thumbnail generation...")
+            let thumbnail = try await thumbnailTask.value
+            
+            // Create clip model for the new clip
+            let newClip = VideoClip(
                 asset: asset,
-                presetName: AVAssetExportPresetMediumQuality // Use medium quality to prevent memory issues
-            ) else {
-                throw VideoError.exportSessionCreationFailed
-            }
-
-            exportSession.outputURL = destinationURL
-            exportSession.outputFileType = .mp4
-            exportSession.shouldOptimizeForNetworkUse = true
-
-            // Set a timeout for the export
-            let exportTask = Task {
-                await exportSession.export()
-            }
-
-            // Wait for export with timeout
-            _ = try await withThrowingTaskGroup(of: Void.self) { group in
-                group.addTask {
-                    try await exportTask.value
-                }
-
-                group.addTask {
-                    try await Task.sleep(nanoseconds: 30_000_000_000) // 30 second timeout
-                    exportTask.cancel()
-                    throw VideoError.exportFailed
-                }
-
-                try await group.next()
-                group.cancelAll()
-            }
-
-            guard exportSession.status == .completed else {
-                if let error = exportSession.error {
-                    print("Export failed: \(error.localizedDescription)")
-                    throw error
-                }
-                throw VideoError.exportFailed
-            }
-
-            print("Successfully exported to: \(destinationURL)")
-
-            // Create a new asset from the exported file with conservative options
-            let copiedAsset = AVURLAsset(url: destinationURL, options: options)
-
-            // Process the copied asset
-            try await processAsset(copiedAsset, at: destinationURL)
-
+                startTime: currentTime.seconds,
+                endTime: (currentTime + assetDuration).seconds,
+                thumbnail: thumbnail,
+                assetStartTime: 0,
+                assetDuration: assetDuration.seconds
+            )
+            
+            print("Adding clip to model...")
+            // Add clip and start pose detection
+            clips.append(newClip)
+            
+            // Update state before starting pose detection
+            composition = newComposition
+            totalDuration = (currentTime + assetDuration).seconds
+            selectedClipIndex = clips.count - 1 // Set the newly added clip as selected
+            
+            print("Setting up video composition...")
+            // Create video composition and update player
+            let videoComposition = try await setupVideoComposition(for: newComposition, clips: clips)
+            updatePlayer(with: videoComposition)
+            
+            // Start pose detection after everything else is set up
+            startPoseDetection(for: newClip)
+            
             // Clean up the original temporary file if needed
             if url.path.contains("/tmp/") {
                 try? FileManager.default.removeItem(at: url)
             }
-
+            
         } catch {
             print("Error adding clip: \(error.localizedDescription)")
             if let avError = error as? AVError {
                 print("AVError details: \(avError.localizedDescription)")
                 print("AVError code: \(avError.code.rawValue)")
                 print("AVError user info: \(avError.userInfo)")
-
-                if let underlyingError = avError.userInfo["NSUnderlyingError"] as? Error {
-                    print("Underlying error: \(underlyingError)")
-                }
-                if let failureReason = avError.userInfo["NSLocalizedFailureReason"] as? String {
-                    print("Failure reason: \(failureReason)")
-                }
             }
             throw error
         }
-
+        
         isProcessing = false
-    }
-
-    private func processAsset(_ asset: AVURLAsset, at url: URL) async throws {
-        print("Processing asset at URL: \(url)")
-
-        // Try to load some track properties to verify the asset is valid
-        let tracks = try await asset.loadTracks(withMediaType: AVMediaType.video)
-        guard let videoTrack = tracks.first else {
-            throw VideoError.noVideoTrack
-        }
-
-        print("Loading track properties...")
-        let naturalSize = try await videoTrack.naturalSize
-        print("Track natural size: \(naturalSize)")
-
-        // Get video format details
-        let formatDescriptions = try await videoTrack.formatDescriptions
-        if let format = formatDescriptions.first {
-            let mediaSubType = CMFormatDescriptionGetMediaSubType(format as! CMFormatDescription)
-            let mediaType = CMFormatDescriptionGetMediaType(format as! CMFormatDescription)
-            print("Video format - Media Type: \(mediaType), SubType: \(mediaSubType)")
-        }
-
-        // Generate thumbnail for new clip asynchronously
-        let imageGenerator = AVAssetImageGenerator(asset: asset)
-        imageGenerator.appliesPreferredTrackTransform = true
-        imageGenerator.maximumSize = CGSize(width: 200, height: 200)
-        imageGenerator.requestedTimeToleranceBefore = CMTime.zero
-        imageGenerator.requestedTimeToleranceAfter = CMTime.zero
-
-        // Start thumbnail generation early
-        let thumbnailTask = Task {
-            let time = CMTime(seconds: 0.03, preferredTimescale: 600)
-            let image = try await imageGenerator.image(at: time)
-            return UIImage(cgImage: image.image)
-        }
-
-        // Create composition if it doesn't exist
-        let newComposition = composition ?? AVMutableComposition()
-        var currentTime = CMTime(seconds: totalDuration, preferredTimescale: 600)
-
-        let assetDuration = try await asset.duration
-        print("Asset duration: \(assetDuration.seconds) seconds")
-
-        // Create a unique track ID for this clip
-        let trackID = clips.count + 1
-
-        print("Adding video track to composition...")
-        // Add video track with unique ID
-        let compositionVideoTrack = newComposition.addMutableTrack(
-            withMediaType: AVMediaType.video,
-            preferredTrackID: CMPersistentTrackID(trackID)
-        )
-
-        try compositionVideoTrack?.insertTimeRange(
-            CMTimeRange(start: .zero, duration: assetDuration),
-            of: videoTrack,
-            at: currentTime
-        )
-
-        // Add audio track if available
-        if let audioTrack = try await asset.loadTracks(withMediaType: AVMediaType.audio).first {
-            print("Adding audio track to composition...")
-            let compositionAudioTrack = newComposition.addMutableTrack(
-                withMediaType: AVMediaType.audio,
-                preferredTrackID: CMPersistentTrackID(trackID + 1000)
-            )
-
-            try compositionAudioTrack?.insertTimeRange(
-                CMTimeRange(start: .zero, duration: assetDuration),
-                of: audioTrack,
-                at: currentTime
-            )
-        }
-
-        // Wait for thumbnail generation to complete
-        print("Waiting for thumbnail generation...")
-        let thumbnail = try await thumbnailTask.value
-
-        // Create clip model for the new clip
-        let newClip = VideoClip(
-            asset: asset,
-            startTime: currentTime.seconds,
-            endTime: (currentTime + assetDuration).seconds,
-            thumbnail: thumbnail,
-            assetStartTime: 0,
-            assetDuration: assetDuration.seconds
-        )
-
-        print("Adding clip to model...")
-        // Add clip and start pose detection
-        clips.append(newClip)
-
-        // Update state before starting pose detection
-        composition = newComposition
-        totalDuration = (currentTime + assetDuration).seconds
-        selectedClipIndex = clips.count - 1 // Set the newly added clip as selected
-
-        print("Setting up video composition...")
-        // Create video composition and update player
-        let videoComposition = try await setupVideoComposition(for: newComposition, clips: clips)
-        await updatePlayer(with: videoComposition)
-
-        // Start pose detection after everything else is set up
-        startPoseDetection(for: newClip)
     }
 
     private func updatePlayer(with videoComposition: AVMutableVideoComposition? = nil) {
@@ -687,9 +580,7 @@ class VideoEditViewModel: ObservableObject {
         }
     }
 
-    func exportVideo() async throws -> URL {
-        guard let composition = composition else { throw VideoError.noComposition }
-
+    func export() async throws -> URL {
         await MainActor.run {
             isProcessing = true
         }
@@ -699,11 +590,29 @@ class VideoEditViewModel: ObservableObject {
             }
         }
 
-        let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension("mp4")
+        // Wait for all pose detection to complete
+        for clip in clips {
+            while clip.poseDetectionStatus == .pending || clip.poseDetectionStatus == .inProgress {
+                try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            }
 
-        // Create export session on the main actor to avoid data races
+            if case let .failed(error) = clip.poseDetectionStatus {
+                throw error
+            }
+        }
+
+        // Create temporary file URL
+        let tempDir = FileManager.default.temporaryDirectory
+        let outputURL = tempDir.appendingPathComponent(UUID().uuidString).appendingPathExtension("mp4")
+
+        // Ensure composition and video composition are ready
+        guard let composition = composition else {
+            throw VideoError.noComposition
+        }
+
+        let videoComposition = try await setupVideoComposition(for: composition, clips: clips)
+
+        // Configure export session
         guard let exportSession = AVAssetExportSession(
             asset: composition,
             presetName: AVAssetExportPresetHighestQuality
@@ -711,70 +620,26 @@ class VideoEditViewModel: ObservableObject {
             throw VideoError.exportSessionCreationFailed
         }
 
-        // Create video composition for export
-        let videoComposition = AVMutableVideoComposition()
-        videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
-        var instructions: [AVMutableVideoCompositionInstruction] = []
-        var currentTime = CMTime.zero
-
-        // Process each clip to create video composition instructions
-        for clip in clips {
-            if let videoTrack = try await clip.asset.loadTracks(withMediaType: AVMediaType.video).first {
-                let naturalSize = try await videoTrack.load(.naturalSize)
-                let transform = try await videoTrack.load(.preferredTransform)
-
-                // Set video composition render size if not already set
-                if videoComposition.renderSize == .zero {
-                    let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
-                    videoComposition.renderSize = CGSize(
-                        width: isVideoPortrait ? naturalSize.height : naturalSize.width,
-                        height: isVideoPortrait ? naturalSize.width : naturalSize.height
-                    )
-                }
-
-                // Create instruction for this clip
-                let instruction = AVMutableVideoCompositionInstruction()
-                let duration = CMTime(seconds: clip.assetDuration, preferredTimescale: 600)
-                instruction.timeRange = CMTimeRange(start: currentTime, duration: duration)
-
-                if let compositionTrack = composition.tracks(withMediaType: AVMediaType.video).first {
-                    let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
-                    layerInstruction.setTransform(transform, at: currentTime)
-                    instruction.layerInstructions = [layerInstruction]
-                }
-
-                instructions.append(instruction)
-                currentTime = currentTime + duration
-            }
-        }
-
-        videoComposition.instructions = instructions
-
-        // Configure export session
-        exportSession.videoComposition = videoComposition
         exportSession.outputURL = outputURL
         exportSession.outputFileType = .mp4
         exportSession.shouldOptimizeForNetworkUse = true
+        exportSession.videoComposition = videoComposition
 
-        // Export using the modern async/await API
-        try await exportSession.export(to: outputURL, as: .mp4)
-
-        // Monitor export states using async sequence
+        // Modern async/await export with progress monitoring
         for try await state in exportSession.states() {
             switch state {
-            case .pending:
-                continue
             case .waiting:
-                continue
-            case let .exporting(progress):
-                print("Export progress: \(progress.fractionCompleted)")
-                continue
+                print("Export waiting...")
+            case .exporting(let progress):
+                print("Export progress: \(Int(progress.fractionCompleted * 100))%")
+            case .pending:
+                print("Export pending...")
             @unknown default:
-                continue
+                print("Unknown export state encountered: \(state)")
             }
         }
-
-        // After the export completes, check if the file exists
+        
+        // After the export completes, check the status
         if FileManager.default.fileExists(atPath: outputURL.path) {
             return outputURL
         } else {
@@ -1318,51 +1183,6 @@ class VideoEditViewModel: ObservableObject {
         if let index = clips.firstIndex(where: { $0.id == updatedClip.id }) {
             clips[index] = updatedClip
         }
-    }
-
-    func export() async throws -> URL {
-        // Wait for all pose detection to complete
-        for clip in clips {
-            while clip.poseDetectionStatus == .pending || clip.poseDetectionStatus == .inProgress {
-                try await Task.sleep(nanoseconds: 100_000_000) // 100ms
-            }
-
-            if case let .failed(error) = clip.poseDetectionStatus {
-                throw error
-            }
-        }
-
-        // Create temporary file URL
-        let tempDir = FileManager.default.temporaryDirectory
-        let outputURL = tempDir.appendingPathComponent(UUID().uuidString).appendingPathExtension("mp4")
-
-        // Ensure composition and video composition are ready
-        guard let composition = composition else {
-            throw VideoError.noComposition
-        }
-
-        let videoComposition = try await setupVideoComposition(for: composition, clips: clips)
-
-        // Configure export session
-        guard let exportSession = AVAssetExportSession(
-            asset: composition,
-            presetName: AVAssetExportPresetHighestQuality
-        ) else {
-            throw VideoError.exportSessionCreationFailed
-        }
-
-        exportSession.outputURL = outputURL
-        exportSession.outputFileType = .mp4
-        exportSession.videoComposition = videoComposition
-
-        // Export the video
-        await exportSession.export()
-
-        guard exportSession.status == .completed else {
-            throw exportSession.error ?? VideoError.exportFailed
-        }
-
-        return outputURL
     }
 
     deinit {

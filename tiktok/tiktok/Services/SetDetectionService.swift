@@ -250,8 +250,6 @@ class SetDetectionService {
         var cyclePeak = -1
 
         for i in 0 ..< distanceSeries.count {
-            let value = distanceSeries[i]
-
             switch currentPhase {
             case .initial:
                 if startsFromBottom, minima.contains(i) {
