@@ -334,8 +334,9 @@ struct VideoEditView: View {
     @State private var showVideoPicker = false
     @State private var showSongGeneration = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.undoManager) private var undoManager
     var onVideoEdited: ((URL) -> Void)?
-
+    
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
@@ -433,6 +434,23 @@ struct VideoEditView: View {
                         dismiss()
                     }
                 }
+                
+                // Add Undo/Redo buttons in toolbar
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Button {
+                        undoManager?.undo()
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                    }
+                    .disabled(!(undoManager?.canUndo ?? false))
+                    
+                    Button {
+                        undoManager?.redo()
+                    } label: {
+                        Image(systemName: "arrow.uturn.forward")
+                    }
+                    .disabled(!(undoManager?.canRedo ?? false))
+                }
 
                 if !viewModel.clips.isEmpty {
                     ToolbarItem(placement: .navigationBarTrailing) {
@@ -493,6 +511,48 @@ struct VideoEditView: View {
                 // TODO: Add the song to the video
             }
         }
+        // Add shake gesture support
+        .onShake {
+            if undoManager?.canUndo ?? false {
+                undoManager?.undo()
+            }
+        }
+        .onAppear {
+            // Update the undoManager when the view appears
+            viewModel.undoManager = undoManager
+        }
+    }
+}
+
+// Add shake gesture detection
+extension UIDevice {
+    static let deviceDidShakeNotification = Notification.Name(rawValue: "deviceDidShakeNotification")
+}
+
+extension UIWindow {
+    open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
+        if motion == .motionShake {
+            NotificationCenter.default.post(name: UIDevice.deviceDidShakeNotification, object: nil)
+        }
+    }
+}
+
+// SwiftUI shake gesture view modifier
+struct DeviceShakeViewModifier: ViewModifier {
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear()
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.deviceDidShakeNotification)) { _ in
+                action()
+            }
+    }
+}
+
+extension View {
+    func onShake(perform action: @escaping () -> Void) -> some View {
+        self.modifier(DeviceShakeViewModifier(action: action))
     }
 }
 
