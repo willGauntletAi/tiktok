@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 @preconcurrency import CoreImage
+import CoreMedia
 import SwiftUI
 import UIKit
 
@@ -82,97 +83,113 @@ class VideoEditViewModel: ObservableObject {
 
         // Get all composition video tracks
         let compositionTracks = composition.tracks(withMediaType: .video)
+        print("Number of composition tracks: \(compositionTracks.count)")
 
         // Process each clip
         for (index, clip) in clips.enumerated() {
-            if let videoTrack = try await clip.asset.loadTracks(withMediaType: .video).first,
-               let compositionTrack = compositionTracks[safe: index]
-            {
+            if let videoTrack = try await clip.asset.loadTracks(withMediaType: .video).first {
                 // Create instruction for this clip
                 let instruction = AVMutableVideoCompositionInstruction()
                 let clipDuration = CMTime(seconds: clip.assetDuration, preferredTimescale: 600)
                 instruction.timeRange = CMTimeRange(start: currentTime, duration: clipDuration)
 
-                let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
+                // Create layer instructions for all tracks, but only make the current one visible
+                var layerInstructions: [AVMutableVideoCompositionLayerInstruction] = []
 
-                // Get the original transform and properties
-                let transform = try await videoTrack.load(.preferredTransform)
-                let naturalSize = try await videoTrack.load(.naturalSize)
+                for (trackIndex, compositionTrack) in compositionTracks.enumerated() {
+                    let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
 
-                // Set initial transform with color properties
-                layerInstruction.setTransform(transform, at: currentTime)
-                layerInstruction.setOpacity(1.0, at: currentTime)
+                    // Get the original transform and properties for the current clip's track
+                    let transform = try await videoTrack.load(.preferredTransform)
+                    let naturalSize = try await videoTrack.load(.naturalSize)
 
-                // Handle zoom effect if configured
-                if let zoomConfig = clip.zoomConfig {
-                    // Calculate zoom transform while preserving color properties
-                    var zoomTransform = transform
-                    let scale: CGFloat = 1.5
-                    let scaleTransform = CGAffineTransform(scaleX: scale, y: scale)
+                    if trackIndex == index {
+                        // This is the current clip's track
+                        layerInstruction.setTransform(transform, at: currentTime)
+                        layerInstruction.setOpacity(1.0, at: currentTime)
 
-                    // Center the scaling
-                    let tx = (naturalSize.width * (scale - 1)) / 2
-                    let ty = (naturalSize.height * (scale - 1)) / 2
-                    let centeringTransform = CGAffineTransform(translationX: -tx, y: -ty)
+                        // Handle zoom effect if configured
+                        if let zoomConfig = clip.zoomConfig {
+                            // Calculate zoom transform while preserving color properties
+                            var zoomTransform = transform
+                            let scale: CGFloat = 1.5
+                            let scaleTransform = CGAffineTransform(scaleX: scale, y: scale)
 
-                    // Combine transforms while preserving color properties
-                    zoomTransform = transform
-                        .concatenating(centeringTransform)
-                        .concatenating(scaleTransform)
+                            // Center the scaling
+                            let tx = (naturalSize.width * (scale - 1)) / 2
+                            let ty = (naturalSize.height * (scale - 1)) / 2
+                            let centeringTransform = CGAffineTransform(translationX: -tx, y: -ty)
 
-                    // Handle zoom in
-                    let zoomInStart = CMTime(seconds: clip.startTime + zoomConfig.startZoomIn, preferredTimescale: 600)
+                            // Combine transforms while preserving color properties
+                            zoomTransform = transform
+                                .concatenating(centeringTransform)
+                                .concatenating(scaleTransform)
 
-                    // Set color properties for initial state
-                    layerInstruction.setOpacity(1.0, at: currentTime)
+                            // Handle zoom in
+                            let zoomInStart = CMTime(seconds: clip.startTime + zoomConfig.startZoomIn, preferredTimescale: 600)
 
-                    if let zoomInComplete = zoomConfig.zoomInComplete {
-                        let zoomInEnd = CMTime(seconds: clip.startTime + zoomInComplete, preferredTimescale: 600)
-                        // Apply transform ramp with preserved color properties
-                        layerInstruction.setTransformRamp(
-                            fromStart: transform,
-                            toEnd: zoomTransform,
-                            timeRange: CMTimeRange(start: zoomInStart, end: zoomInEnd)
-                        )
-                        // Ensure color properties are maintained during zoom
-                        layerInstruction.setOpacity(1.0, at: zoomInStart)
-                        layerInstruction.setOpacity(1.0, at: zoomInEnd)
-                    } else {
-                        layerInstruction.setTransform(zoomTransform, at: zoomInStart)
-                        layerInstruction.setOpacity(1.0, at: zoomInStart)
-                    }
+                            // Set color properties for initial state
+                            layerInstruction.setOpacity(1.0, at: currentTime)
 
-                    // Handle zoom out if specified
-                    if let startZoomOut = zoomConfig.startZoomOut {
-                        let zoomOutStart = CMTime(seconds: clip.startTime + startZoomOut, preferredTimescale: 600)
+                            if let zoomInComplete = zoomConfig.zoomInComplete {
+                                let zoomInEnd = CMTime(seconds: clip.startTime + zoomInComplete, preferredTimescale: 600)
+                                // Apply transform ramp with preserved color properties
+                                layerInstruction.setTransformRamp(
+                                    fromStart: transform,
+                                    toEnd: zoomTransform,
+                                    timeRange: CMTimeRange(start: zoomInStart, end: zoomInEnd)
+                                )
+                                // Ensure color properties are maintained during zoom
+                                layerInstruction.setOpacity(1.0, at: zoomInStart)
+                                layerInstruction.setOpacity(1.0, at: zoomInEnd)
+                            } else {
+                                layerInstruction.setTransform(zoomTransform, at: zoomInStart)
+                                layerInstruction.setOpacity(1.0, at: zoomInStart)
+                            }
 
-                        if let zoomOutComplete = zoomConfig.zoomOutComplete {
-                            let zoomOutEnd = CMTime(seconds: clip.startTime + zoomOutComplete, preferredTimescale: 600)
-                            // Apply transform ramp with preserved color properties
-                            layerInstruction.setTransformRamp(
-                                fromStart: zoomTransform,
-                                toEnd: transform,
-                                timeRange: CMTimeRange(start: zoomOutStart, end: zoomOutEnd)
-                            )
-                            // Ensure color properties are maintained during zoom out
-                            layerInstruction.setOpacity(1.0, at: zoomOutStart)
-                            layerInstruction.setOpacity(1.0, at: zoomOutEnd)
+                            // Handle zoom out if specified
+                            if let startZoomOut = zoomConfig.startZoomOut {
+                                let zoomOutStart = CMTime(seconds: clip.startTime + startZoomOut, preferredTimescale: 600)
+
+                                if let zoomOutComplete = zoomConfig.zoomOutComplete {
+                                    let zoomOutEnd = CMTime(seconds: clip.startTime + zoomOutComplete, preferredTimescale: 600)
+                                    // Apply transform ramp with preserved color properties
+                                    layerInstruction.setTransformRamp(
+                                        fromStart: zoomTransform,
+                                        toEnd: transform,
+                                        timeRange: CMTimeRange(start: zoomOutStart, end: zoomOutEnd)
+                                    )
+                                    // Ensure color properties are maintained during zoom out
+                                    layerInstruction.setOpacity(1.0, at: zoomOutStart)
+                                    layerInstruction.setOpacity(1.0, at: zoomOutEnd)
+                                } else {
+                                    layerInstruction.setTransform(transform, at: zoomOutStart)
+                                    layerInstruction.setOpacity(1.0, at: zoomOutStart)
+                                }
+                            }
                         } else {
-                            layerInstruction.setTransform(transform, at: zoomOutStart)
-                            layerInstruction.setOpacity(1.0, at: zoomOutStart)
+                            // Set initial transform with color properties
+                            layerInstruction.setTransform(transform, at: currentTime)
+                            layerInstruction.setOpacity(1.0, at: currentTime)
                         }
+                    } else {
+                        // Hide other tracks during this time range
+                        layerInstruction.setOpacity(0.0, at: currentTime)
                     }
-                } else {
-                    // Set initial transform with color properties
-                    layerInstruction.setTransform(transform, at: currentTime)
-                    layerInstruction.setOpacity(1.0, at: currentTime)
+
+                    layerInstructions.append(layerInstruction)
                 }
 
-                instruction.layerInstructions = [layerInstruction]
+                instruction.layerInstructions = layerInstructions
                 instructions.append(instruction)
 
                 // Set video composition render size if not already set
                 if videoComposition.renderSize == .zero {
+                    // Load transform and size first
+                    let transform = try await videoTrack.load(.preferredTransform)
+                    let naturalSize = try await videoTrack.load(.naturalSize)
+
+                    // Then check orientation
                     let isVideoPortrait = transform.a == 0 && abs(transform.b) == 1
                     videoComposition.renderSize = CGSize(
                         width: isVideoPortrait ? naturalSize.height : naturalSize.width,
@@ -193,98 +210,241 @@ class VideoEditViewModel: ObservableObject {
         isProcessing = true
 
         do {
-            let asset = AVURLAsset(url: url)
+            print("Adding clip from URL: \(url)")
+            print("Checking if file exists: \(FileManager.default.fileExists(atPath: url.path))")
 
-            // Generate thumbnail for new clip asynchronously
-            let imageGenerator = AVAssetImageGenerator(asset: asset)
-            imageGenerator.appliesPreferredTrackTransform = true
-            imageGenerator.maximumSize = CGSize(width: 200, height: 200)
-            imageGenerator.requestedTimeToleranceBefore = .zero
-            imageGenerator.requestedTimeToleranceAfter = .zero
+            // Create asset with conservative memory options
+            let options: [String: Any] = [
+                AVURLAssetPreferPreciseDurationAndTimingKey: true,
+                AVURLAssetAllowsCellularAccessKey: true,
+                // Prevent memory issues on device
+                "AVURLAssetOutOfBandMIMETypeKey": "video/mp4",
+                "AVURLAssetHTTPHeaderFieldsKey": ["Accept": "video/*"],
+            ]
 
-            // Start thumbnail generation early
-            let thumbnailTask = Task {
-                let time = CMTime(seconds: 0.03, preferredTimescale: 600)
-                let image = try await imageGenerator.image(at: time)
-                return UIImage(cgImage: image.image)
-            }
+            let asset = AVURLAsset(url: url, options: options)
 
-            // Create composition if it doesn't exist
-            let newComposition = composition ?? AVMutableComposition()
-            var currentTime = CMTime(seconds: totalDuration, preferredTimescale: 600)
-
-            // Process the new clip
-            let videoTracks = try await asset.loadTracks(withMediaType: AVMediaType.video)
-            guard let videoTrack = videoTracks.first else {
+            // Verify we can load the tracks before proceeding
+            let tracks = try await asset.loadTracks(withMediaType: .video)
+            guard let videoTrack = tracks.first else {
                 throw VideoError.noVideoTrack
             }
 
-            let assetDuration = try await asset.load(.duration)
+            // Create a documents directory URL for our video files
+            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let videosDirectory = documentsPath.appendingPathComponent("Videos", isDirectory: true)
 
-            // Add video track
-            let compositionVideoTrack = newComposition.addMutableTrack(
-                withMediaType: AVMediaType.video,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            )
-
-            try compositionVideoTrack?.insertTimeRange(
-                CMTimeRange(start: .zero, duration: assetDuration),
-                of: videoTrack,
-                at: currentTime
-            )
-
-            // Add audio track if available
-            if let audioTrack = try await asset.loadTracks(withMediaType: AVMediaType.audio).first {
-                let compositionAudioTrack = newComposition.addMutableTrack(
-                    withMediaType: AVMediaType.audio,
-                    preferredTrackID: kCMPersistentTrackID_Invalid
-                )
-
-                try compositionAudioTrack?.insertTimeRange(
-                    CMTimeRange(start: .zero, duration: assetDuration),
-                    of: audioTrack,
-                    at: currentTime
-                )
+            // Clean up old files if needed
+            let fileManager = FileManager.default
+            if fileManager.fileExists(atPath: videosDirectory.path) {
+                let contents = try fileManager.contentsOfDirectory(at: videosDirectory, includingPropertiesForKeys: nil)
+                if contents.count > 10 { // Keep only recent files
+                    let oldFiles = try contents.sorted {
+                        try $0.resourceValues(forKeys: [.creationDateKey]).creationDate! < $1.resourceValues(forKeys: [.creationDateKey]).creationDate!
+                    }
+                    for file in oldFiles.prefix(contents.count - 10) {
+                        try? fileManager.removeItem(at: file)
+                    }
+                }
+            } else {
+                try fileManager.createDirectory(at: videosDirectory, withIntermediateDirectories: true)
             }
 
-            // Wait for thumbnail generation to complete
-            let thumbnail = try await thumbnailTask.value
+            // Create a new URL in the videos directory
+            let destinationURL = videosDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("mp4")
 
-            // Create clip model for the new clip
-            let newClip = VideoClip(
+            print("Creating export session to copy file to: \(destinationURL)")
+
+            // Create export session with conservative settings
+            guard let exportSession = AVAssetExportSession(
                 asset: asset,
-                startTime: currentTime.seconds,
-                endTime: (currentTime + assetDuration).seconds,
-                thumbnail: thumbnail,
-                assetStartTime: 0,
-                assetDuration: assetDuration.seconds
-            )
+                presetName: AVAssetExportPresetMediumQuality // Use medium quality to prevent memory issues
+            ) else {
+                throw VideoError.exportSessionCreationFailed
+            }
 
-            // Add clip and start pose detection
-            clips.append(newClip)
-            startPoseDetection(for: newClip)
+            exportSession.outputURL = destinationURL
+            exportSession.outputFileType = .mp4
+            exportSession.shouldOptimizeForNetworkUse = true
 
-            // Update state
-            composition = newComposition
-            totalDuration = (currentTime + assetDuration).seconds
+            // Set a timeout for the export
+            let exportTask = Task {
+                await exportSession.export()
+            }
 
-            // Update player
-            await updatePlayer()
+            // Wait for export with timeout
+            _ = try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    try await exportTask.value
+                }
+
+                group.addTask {
+                    try await Task.sleep(nanoseconds: 30_000_000_000) // 30 second timeout
+                    exportTask.cancel()
+                    throw VideoError.exportFailed
+                }
+
+                try await group.next()
+                group.cancelAll()
+            }
+
+            guard exportSession.status == .completed else {
+                if let error = exportSession.error {
+                    print("Export failed: \(error.localizedDescription)")
+                    throw error
+                }
+                throw VideoError.exportFailed
+            }
+
+            print("Successfully exported to: \(destinationURL)")
+
+            // Create a new asset from the exported file with conservative options
+            let copiedAsset = AVURLAsset(url: destinationURL, options: options)
+
+            // Process the copied asset
+            try await processAsset(copiedAsset, at: destinationURL)
+
+            // Clean up the original temporary file if needed
+            if url.path.contains("/tmp/") {
+                try? FileManager.default.removeItem(at: url)
+            }
 
         } catch {
-            print("Error adding clip: \(error)")
+            print("Error adding clip: \(error.localizedDescription)")
+            if let avError = error as? AVError {
+                print("AVError details: \(avError.localizedDescription)")
+                print("AVError code: \(avError.code.rawValue)")
+                print("AVError user info: \(avError.userInfo)")
+
+                if let underlyingError = avError.userInfo["NSUnderlyingError"] as? Error {
+                    print("Underlying error: \(underlyingError)")
+                }
+                if let failureReason = avError.userInfo["NSLocalizedFailureReason"] as? String {
+                    print("Failure reason: \(failureReason)")
+                }
+            }
             throw error
         }
 
         isProcessing = false
     }
 
-    private func updatePlayer() {
+    private func processAsset(_ asset: AVURLAsset, at url: URL) async throws {
+        print("Processing asset at URL: \(url)")
+
+        // Try to load some track properties to verify the asset is valid
+        let tracks = try await asset.loadTracks(withMediaType: AVMediaType.video)
+        guard let videoTrack = tracks.first else {
+            throw VideoError.noVideoTrack
+        }
+
+        print("Loading track properties...")
+        let naturalSize = try await videoTrack.naturalSize
+        print("Track natural size: \(naturalSize)")
+
+        // Get video format details
+        let formatDescriptions = try await videoTrack.formatDescriptions
+        if let format = formatDescriptions.first {
+            let mediaSubType = CMFormatDescriptionGetMediaSubType(format as! CMFormatDescription)
+            let mediaType = CMFormatDescriptionGetMediaType(format as! CMFormatDescription)
+            print("Video format - Media Type: \(mediaType), SubType: \(mediaSubType)")
+        }
+
+        // Generate thumbnail for new clip asynchronously
+        let imageGenerator = AVAssetImageGenerator(asset: asset)
+        imageGenerator.appliesPreferredTrackTransform = true
+        imageGenerator.maximumSize = CGSize(width: 200, height: 200)
+        imageGenerator.requestedTimeToleranceBefore = CMTime.zero
+        imageGenerator.requestedTimeToleranceAfter = CMTime.zero
+
+        // Start thumbnail generation early
+        let thumbnailTask = Task {
+            let time = CMTime(seconds: 0.03, preferredTimescale: 600)
+            let image = try await imageGenerator.image(at: time)
+            return UIImage(cgImage: image.image)
+        }
+
+        // Create composition if it doesn't exist
+        let newComposition = composition ?? AVMutableComposition()
+        var currentTime = CMTime(seconds: totalDuration, preferredTimescale: 600)
+
+        let assetDuration = try await asset.duration
+        print("Asset duration: \(assetDuration.seconds) seconds")
+
+        // Create a unique track ID for this clip
+        let trackID = clips.count + 1
+
+        print("Adding video track to composition...")
+        // Add video track with unique ID
+        let compositionVideoTrack = newComposition.addMutableTrack(
+            withMediaType: AVMediaType.video,
+            preferredTrackID: CMPersistentTrackID(trackID)
+        )
+
+        try compositionVideoTrack?.insertTimeRange(
+            CMTimeRange(start: .zero, duration: assetDuration),
+            of: videoTrack,
+            at: currentTime
+        )
+
+        // Add audio track if available
+        if let audioTrack = try await asset.loadTracks(withMediaType: AVMediaType.audio).first {
+            print("Adding audio track to composition...")
+            let compositionAudioTrack = newComposition.addMutableTrack(
+                withMediaType: AVMediaType.audio,
+                preferredTrackID: CMPersistentTrackID(trackID + 1000)
+            )
+
+            try compositionAudioTrack?.insertTimeRange(
+                CMTimeRange(start: .zero, duration: assetDuration),
+                of: audioTrack,
+                at: currentTime
+            )
+        }
+
+        // Wait for thumbnail generation to complete
+        print("Waiting for thumbnail generation...")
+        let thumbnail = try await thumbnailTask.value
+
+        // Create clip model for the new clip
+        let newClip = VideoClip(
+            asset: asset,
+            startTime: currentTime.seconds,
+            endTime: (currentTime + assetDuration).seconds,
+            thumbnail: thumbnail,
+            assetStartTime: 0,
+            assetDuration: assetDuration.seconds
+        )
+
+        print("Adding clip to model...")
+        // Add clip and start pose detection
+        clips.append(newClip)
+
+        // Update state before starting pose detection
+        composition = newComposition
+        totalDuration = (currentTime + assetDuration).seconds
+        selectedClipIndex = clips.count - 1 // Set the newly added clip as selected
+
+        print("Setting up video composition...")
+        // Create video composition and update player
+        let videoComposition = try await setupVideoComposition(for: newComposition, clips: clips)
+        await updatePlayer(with: videoComposition)
+
+        // Start pose detection after everything else is set up
+        startPoseDetection(for: newClip)
+    }
+
+    private func updatePlayer(with videoComposition: AVMutableVideoComposition? = nil) {
         guard let composition = composition else { return }
 
         Task { @MainActor in
             // Create player item with composition
             let playerItem = AVPlayerItem(asset: composition)
+
+            // Apply video composition if provided
+            if let videoComposition = videoComposition {
+                playerItem.videoComposition = videoComposition
+            }
 
             // Create or update player
             if let player = player {
@@ -1047,12 +1207,26 @@ class VideoEditViewModel: ObservableObject {
     }
 
     deinit {
+        // Clean up time observer
+        if let observer = timeObserver {
+            _player?.removeTimeObserver(observer)
+            timeObserver = nil
+        }
+
+        // Clean up player
+        _player?.pause()
+        _player = nil
+
         // Cancel any ongoing pose detection tasks
         Task { @MainActor in
             for clip in clips {
                 await poseDetectionService.cancelDetection(for: clip.id)
             }
         }
+
+        // Clean up temporary files
+        let tempDir = FileManager.default.temporaryDirectory
+        try? FileManager.default.removeItem(at: tempDir)
     }
 }
 
