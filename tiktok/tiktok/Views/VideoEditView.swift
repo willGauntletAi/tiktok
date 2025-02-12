@@ -326,6 +326,91 @@ struct VideoTimelineView: View {
     }
 }
 
+struct EmptyHistoryView: View {
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.largeTitle)
+                .foregroundColor(.gray)
+            Text("No edit history yet")
+                .font(.headline)
+                .foregroundColor(.gray)
+        }
+    }
+}
+
+struct HistoryEntryView: View {
+    let entry: EditHistoryEntry
+    let index: Int
+    let currentHistoryIndex: Int
+    let onUndo: (Int) async -> Void
+    let onRedo: (Int) async -> Void
+    
+    var body: some View {
+        Button(action: {
+            Task {
+                if index <= currentHistoryIndex {
+                    // When undoing, we want to go to the state before this action
+                    await onUndo(index - 1)
+                } else {
+                    // When redoing, we want to apply this action
+                    await onRedo(index)
+                }
+            }
+        }) {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text(entry.title)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Text(entry.timestamp, style: .time)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+                
+                Spacer()
+                
+                Image(systemName: index <= currentHistoryIndex ? "arrow.uturn.backward" : "arrow.uturn.forward")
+                    .foregroundColor(.blue)
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal)
+        .background(Color(.systemBackground))
+    }
+}
+
+struct EditHistoryView: View {
+    @ObservedObject var viewModel: VideoEditViewModel
+    
+    var body: some View {
+        if viewModel.editHistory.isEmpty {
+            EmptyHistoryView()
+        } else {
+            LazyVStack(spacing: 0) {
+                ForEach(Array(viewModel.editHistory.enumerated()), id: \.element.id) { index, entry in
+                    HistoryEntryView(
+                        entry: entry,
+                        index: index,
+                        currentHistoryIndex: viewModel.currentHistoryIndex,
+                        onUndo: { targetIndex in
+                            await viewModel.undo(to: targetIndex)
+                        },
+                        onRedo: { targetIndex in
+                            await viewModel.redo(to: targetIndex)
+                        }
+                    )
+                    
+                    if index < viewModel.editHistory.count - 1 {
+                        Divider()
+                    }
+                }
+            }
+            .background(Color(.systemGroupedBackground))
+        }
+    }
+}
+
 struct VideoEditView: View {
     @StateObject private var viewModel = VideoEditViewModel()
     @State private var showingExportError = false
@@ -333,97 +418,134 @@ struct VideoEditView: View {
     @State private var showCamera = false
     @State private var showVideoPicker = false
     @State private var showSongGeneration = false
+    @State private var selectedTab = 0
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.undoManager) private var undoManager
+    
     var onVideoEdited: ((URL) -> Void)?
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                if viewModel.isProcessing {
-                    ProgressView("Processing video...")
-                        .progressViewStyle(CircularProgressViewStyle())
-                } else if let player = viewModel.player, viewModel.selectedClip != nil {
-                    // Video preview with native AVKit controls
-                    VideoPlayer(player: player)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 400)
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                        )
-                        .onAppear {
-                            player.play()
+            ZStack(alignment: .bottom) {
+                ScrollView {
+                    VStack(spacing: 20) {
+                        if viewModel.isProcessing {
+                            ProgressView("Processing video...")
+                                .progressViewStyle(CircularProgressViewStyle())
+                        } else if let player = viewModel.player, viewModel.selectedClip != nil {
+                            // Video preview with native AVKit controls
+                            VideoPlayer(player: player)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 400)
+                                .cornerRadius(12)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                )
+                                .onAppear {
+                                    player.play()
+                                }
+                                .onDisappear {
+                                    player.pause()
+                                }
+                                .allowsHitTesting(true)
+                                .zIndex(1)
+                        } else {
+                            // Initial state - show clips list
+                            Text("Add clips to start editing")
+                                .font(.headline)
+                                .foregroundColor(.gray)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 400)
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(12)
                         }
-                        .onDisappear {
-                            player.pause()
-                        }
-                        .allowsHitTesting(true)
-                        .zIndex(1)
-                } else {
-                    // Initial state - show clips list
-                    Text("Add clips to start editing")
-                        .font(.headline)
-                        .foregroundColor(.gray)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 400)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(12)
-                }
 
-                // Action buttons
-                ZStack {
-                    HStack(spacing: 12) {
-                        // Camera button
-                        Button("Record") {
-                            print("Camera button tapped")
-                            showCamera = true
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.green)
-                        .disabled(isAddingClip)
+                        // Action buttons
+                        ZStack {
+                            HStack(spacing: 12) {
+                                // Camera button
+                                Button("Record") {
+                                    print("Camera button tapped")
+                                    showCamera = true
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.green)
+                                .disabled(isAddingClip)
 
-                        // Library button
-                        Button(isAddingClip ? "Adding..." : "Add Clip") {
-                            showVideoPicker = true
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
-                        .disabled(isAddingClip || viewModel.isProcessing)
+                                // Library button
+                                Button(isAddingClip ? "Adding..." : "Add Clip") {
+                                    showVideoPicker = true
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.blue)
+                                .disabled(isAddingClip || viewModel.isProcessing)
 
-                        // Generate Music button
-                        Button("Generate Music") {
-                            showSongGeneration = true
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.purple)
-                        .disabled(viewModel.isProcessing)
+                                // Generate Music button
+                                Button("Generate Music") {
+                                    showSongGeneration = true
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.purple)
+                                .disabled(viewModel.isProcessing)
 
-                        // Split button
-                        if !viewModel.clips.isEmpty {
-                            Button("Split") {
-                                print("Split button tapped at position: \(viewModel.currentPosition)")
-                                Task { @MainActor in
-                                    print("Starting split operation...")
-                                    await viewModel.splitClip(at: viewModel.currentPosition)
-                                    print("Split operation completed")
+                                // Split button
+                                if !viewModel.clips.isEmpty {
+                                    Button("Split") {
+                                        print("Split button tapped at position: \(viewModel.currentPosition)")
+                                        Task { @MainActor in
+                                            print("Starting split operation...")
+                                            await viewModel.splitClip(at: viewModel.currentPosition)
+                                            print("Split operation completed")
+                                        }
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(.orange)
+                                    .disabled(viewModel.currentPosition <= 0 ||
+                                        viewModel.currentPosition >= viewModel.totalDuration ||
+                                        isAddingClip ||
+                                        viewModel.isProcessing)
                                 }
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.orange)
-                            .disabled(viewModel.currentPosition <= 0 ||
-                                viewModel.currentPosition >= viewModel.totalDuration ||
-                                isAddingClip ||
-                                viewModel.isProcessing)
+                            .padding(.horizontal)
                         }
-                    }
-                    .padding(.horizontal)
-                }
-                .zIndex(2)
+                        .zIndex(2)
 
-                // Timeline with position indicator
-                VideoTimelineView(viewModel: viewModel, currentPosition: $viewModel.currentPosition)
+                        // Content based on selected tab
+                        Group {
+                            if selectedTab == 0 {
+                                VideoTimelineView(viewModel: viewModel, currentPosition: $viewModel.currentPosition)
+                                    .frame(height: 160)
+                            } else {
+                                EditHistoryView(viewModel: viewModel)
+                            }
+                        }
+                        .padding(.bottom, 50) // Add padding for the tab bar
+                    }
+                    .padding(.vertical)
+                }
+
+                // Custom tab bar at the bottom
+                HStack(spacing: 0) {
+                    Spacer()
+                    Button(action: { selectedTab = 0 }) {
+                        VStack {
+                            Image(systemName: "film")
+                            Text("Timeline")
+                        }
+                        .foregroundColor(selectedTab == 0 ? .blue : .gray)
+                    }
+                    Spacer()
+                    Button(action: { selectedTab = 1 }) {
+                        VStack {
+                            Image(systemName: "clock.arrow.circlepath")
+                            Text("History")
+                        }
+                        .foregroundColor(selectedTab == 1 ? .blue : .gray)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 8)
+                .background(Color(.systemBackground).shadow(radius: 2, y: -2))
             }
             .navigationTitle("Edit Video")
             .navigationBarTitleDisplayMode(.inline)
@@ -433,23 +555,6 @@ struct VideoEditView: View {
                         viewModel.cleanup()
                         dismiss()
                     }
-                }
-                
-                // Add Undo/Redo buttons in toolbar
-                ToolbarItemGroup(placement: .bottomBar) {
-                    Button {
-                        undoManager?.undo()
-                    } label: {
-                        Image(systemName: "arrow.uturn.backward")
-                    }
-                    .disabled(!(undoManager?.canUndo ?? false))
-                    
-                    Button {
-                        undoManager?.redo()
-                    } label: {
-                        Image(systemName: "arrow.uturn.forward")
-                    }
-                    .disabled(!(undoManager?.canRedo ?? false))
                 }
 
                 if !viewModel.clips.isEmpty {
@@ -513,13 +618,9 @@ struct VideoEditView: View {
         }
         // Add shake gesture support
         .onShake {
-            if undoManager?.canUndo ?? false {
-                undoManager?.undo()
+            Task {
+                await viewModel.undo(to: nil) // Use default behavior to undo most recent action
             }
-        }
-        .onAppear {
-            // Update the undoManager when the view appears
-            viewModel.undoManager = undoManager
         }
     }
 }

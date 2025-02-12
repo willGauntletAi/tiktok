@@ -11,6 +11,18 @@ enum VideoError: Error {
     case exportFailed
 }
 
+struct EditorState {
+    let clips: [VideoClip]
+    let selectedClipIndex: Int?
+}
+
+struct EditHistoryEntry: Identifiable {
+    let id = UUID()
+    let title: String
+    let timestamp: Date
+    let state: EditorState
+}
+
 @MainActor
 class VideoEditViewModel: ObservableObject {
     @Published var clips: [VideoClip] = []
@@ -69,36 +81,106 @@ class VideoEditViewModel: ObservableObject {
     @Published private(set) var poseDetectionInProgress = false
     @Published private(set) var detectedSets: [DetectedExerciseSet] = []
 
-    // Add UndoManager
-    var undoManager: UndoManager?
+    // Edit history management
+    @Published private(set) var editHistory: [EditHistoryEntry] = []
+    @Published private(set) var currentHistoryIndex: Int = -1
     
-    // Initialize with UndoManager
-    init(undoManager: UndoManager? = nil) {
-        self.undoManager = undoManager
+    // Initialize without UndoManager
+    init() {
+        // No need to call updateEditHistory() on init anymore
     }
     
-    // Helper method to register undo operation
-    @MainActor
-    private func registerUndo<T>(withTitle title: String, oldValue: T, newValue: T, action: @escaping (T) -> Void) {
-        undoManager?.registerUndo(withTarget: self) { target in
-            Task { @MainActor in
-                action(oldValue)
-                target.registerRedo(withTitle: title, oldValue: oldValue, newValue: newValue, action: action)
+    private func addHistoryEntry(title: String) {
+        // Remove any redo entries if we're adding a new action in the middle
+        if currentHistoryIndex < editHistory.count - 1 {
+            editHistory.removeSubrange((currentHistoryIndex + 1)...)
+        }
+        
+        // Create new state snapshot
+        let newState = EditorState(
+            clips: clips,
+            selectedClipIndex: selectedClipIndex
+        )
+        
+        // Add the new entry
+        let newEntry = EditHistoryEntry(
+            title: title,
+            timestamp: Date(),
+            state: newState
+        )
+        editHistory.append(newEntry)
+        currentHistoryIndex = editHistory.count - 1
+    }
+    
+    func undo(to targetIndex: Int? = nil) async {
+        // If no target index is provided, undo the most recent action
+        let indexToUndoTo = targetIndex ?? (currentHistoryIndex - 1)
+        
+        guard indexToUndoTo >= -1 else { return }
+        
+        if indexToUndoTo == -1 {
+            // Reset to empty state but keep history
+            clips.removeAll()
+            selectedClipIndex = nil
+            composition = nil
+            totalDuration = 0
+            currentHistoryIndex = -1
+            
+            // Reset player
+            if let observer = timeObserver {
+                _player?.removeTimeObserver(observer)
+                timeObserver = nil
+            }
+            _player?.pause()
+            _player = nil
+            playerItem = nil
+        } else {
+            // Move to the target state
+            currentHistoryIndex = indexToUndoTo
+            await applyState(editHistory[indexToUndoTo].state)
+        }
+    }
+    
+    func redo(to targetIndex: Int? = nil) async {
+        // If no target index is provided, redo the next action
+        let indexToRedoTo = targetIndex ?? (currentHistoryIndex + 1)
+        
+        guard indexToRedoTo < editHistory.count else { return }
+        
+        currentHistoryIndex = indexToRedoTo
+        await applyState(editHistory[indexToRedoTo].state)
+    }
+    
+    private func applyState(_ state: EditorState) async {
+        clips = state.clips
+        selectedClipIndex = state.selectedClipIndex
+        await setupPlayerWithComposition()
+    }
+    
+    // Remove UndoManager-related code from all action methods
+    func updateClipTrim(startTime: Double, endTime: Double) {
+        guard var clip = selectedClip,
+              let index = selectedClipIndex
+        else { return }
+        
+        clip.startTime = startTime
+        clip.endTime = endTime
+        clips[index] = clip
+        
+        // Add to history
+        addHistoryEntry(title: "Trim Clip")
+
+        // Update player with new composition
+        Task {
+            await setupPlayerWithComposition()
+            // Seek to start of modified clip
+            if let player = _player {
+                await player.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
             }
         }
-        undoManager?.setActionName(title)
     }
     
-    // Helper method to register redo operation
-    @MainActor
-    private func registerRedo<T>(withTitle title: String, oldValue: T, newValue: T, action: @escaping (T) -> Void) {
-        undoManager?.registerUndo(withTarget: self) { target in
-            Task { @MainActor in
-                action(newValue)
-                target.registerUndo(withTitle: title, oldValue: oldValue, newValue: newValue, action: action)
-            }
-        }
-    }
+    // ... similar changes for other action methods ...
 
     private func setupVideoComposition(for composition: AVMutableComposition, clips: [VideoClip]) async throws -> AVMutableVideoComposition {
         let videoComposition = AVMutableVideoComposition()
@@ -337,6 +419,9 @@ class VideoEditViewModel: ObservableObject {
             let videoComposition = try await setupVideoComposition(for: newComposition, clips: clips)
             updatePlayer(with: videoComposition)
             
+            // Add to history
+            addHistoryEntry(title: "Add Clip")
+            
             // Start pose detection after everything else is set up
             startPoseDetection(for: newClip)
             
@@ -433,72 +518,21 @@ class VideoEditViewModel: ObservableObject {
         return clips[index]
     }
 
-    func updateClipTrim(startTime: Double, endTime: Double) {
-        guard var clip = selectedClip,
-              let index = selectedClipIndex
-        else { return }
-        
-        let oldStartTime = clip.startTime
-        let oldEndTime = clip.endTime
-        
-        clip.startTime = startTime
-        clip.endTime = endTime
-        clips[index] = clip
-        
-        // Register undo operation
-        registerUndo(
-            withTitle: "Trim Clip",
-            oldValue: (oldStartTime, oldEndTime),
-            newValue: (startTime, endTime)
-        ) { [weak self] times in
-            guard let self = self else { return }
-            guard var clip = self.selectedClip else { return }
-            clip.startTime = times.0
-            clip.endTime = times.1
-            self.clips[index] = clip
-            Task {
-                await self.setupPlayerWithComposition()
-            }
-        }
-
-        // Update player with new composition
-        Task {
-            await setupPlayerWithComposition()
-            // Seek to start of modified clip
-            if let player = _player {
-                await player.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
-            }
-        }
-    }
-
     func updateClipVolume(_ volume: Double) {
         guard var clip = selectedClip,
               let index = selectedClipIndex
         else { return }
         
-        let oldVolume = clip.volume
-        
         clip.volume = volume
         clips[index] = clip
         
-        // Register undo operation
-        registerUndo(
-            withTitle: "Change Volume",
-            oldValue: oldVolume,
-            newValue: volume
-        ) { [weak self] vol in
-            guard let self = self else { return }
-            guard var clip = self.selectedClip else { return }
-            clip.volume = vol
-            self.clips[index] = clip
-            self.updatePlayerVolume()
-        }
+        // Add to history
+        addHistoryEntry(title: "Change Volume")
         
         updatePlayerVolume()
     }
 
     func moveClip(from source: IndexSet, to destination: Int) {
-        let oldClips = clips
         clips.move(fromOffsets: source, toOffset: destination)
         
         if let selected = selectedClipIndex,
@@ -507,18 +541,8 @@ class VideoEditViewModel: ObservableObject {
             selectedClipIndex = sourceFirst < selected ? (selected - 1) : (selected + 1)
         }
         
-        // Register undo operation
-        registerUndo(
-            withTitle: "Move Clip",
-            oldValue: oldClips,
-            newValue: clips
-        ) { [weak self] clips in
-            guard let self = self else { return }
-            self.clips = clips
-            Task {
-                await self.setupPlayerWithComposition()
-            }
-        }
+        // Add to history
+        addHistoryEntry(title: "Move Clip")
         
         // Update player with new clip order
         Task {
@@ -527,9 +551,6 @@ class VideoEditViewModel: ObservableObject {
     }
 
     func deleteClip(at index: Int) {
-        let oldClips = clips
-        let oldSelectedIndex = selectedClipIndex
-        
         // Remove the clip from the array
         clips.remove(at: index)
 
@@ -540,19 +561,8 @@ class VideoEditViewModel: ObservableObject {
             selectedClipIndex = selected - 1
         }
         
-        // Register undo operation
-        registerUndo(
-            withTitle: "Delete Clip",
-            oldValue: (oldClips, oldSelectedIndex),
-            newValue: (clips, selectedClipIndex)
-        ) { [weak self] state in
-            guard let self = self else { return }
-            self.clips = state.0
-            self.selectedClipIndex = state.1
-            Task {
-                await self.setupPlayerWithComposition()
-            }
-        }
+        // Add to history
+        addHistoryEntry(title: "Delete Clip")
 
         // Create new composition with remaining clips
         Task {
@@ -746,6 +756,8 @@ class VideoEditViewModel: ObservableObject {
         selectedClipIndex = nil
         composition = nil
         totalDuration = 0
+        editHistory.removeAll()
+        currentHistoryIndex = -1
     }
 
     private func setupPlayerWithComposition() async {
@@ -770,9 +782,6 @@ class VideoEditViewModel: ObservableObject {
             print("Invalid swap index")
             return
         }
-        
-        let oldClips = clips
-        let oldSelectedIndex = selectedClipIndex
 
         // First update the clips array
         clips.swapAt(index, index + 1)
@@ -787,19 +796,8 @@ class VideoEditViewModel: ObservableObject {
             print("Updated selected clip index to: \(index)")
         }
         
-        // Register undo operation
-        registerUndo(
-            withTitle: "Swap Clips",
-            oldValue: (oldClips, oldSelectedIndex),
-            newValue: (clips, selectedClipIndex)
-        ) { [weak self] state in
-            guard let self = self else { return }
-            self.clips = state.0
-            self.selectedClipIndex = state.1
-            Task {
-                await self.setupPlayerWithComposition()
-            }
-        }
+        // Add to history
+        addHistoryEntry(title: "Swap Clips")
 
         // Rebuild the composition with the new clip order
         Task {
@@ -1071,21 +1069,8 @@ class VideoEditViewModel: ObservableObject {
                 }
             }
 
-            // After successful split, register undo operation
-            await MainActor.run {
-                registerUndo(
-                    withTitle: "Split Clip",
-                    oldValue: (oldClips, oldSelectedIndex),
-                    newValue: (clips, selectedClipIndex)
-                ) { [weak self] state in
-                    guard let self = self else { return }
-                    self.clips = state.0
-                    self.selectedClipIndex = state.1
-                    Task {
-                        await self.setupPlayerWithComposition()
-                    }
-                }
-            }
+            // Add to history
+            addHistoryEntry(title: "Split Clip")
 
             print("Successfully completed splitClip operation")
         } catch {
@@ -1116,27 +1101,12 @@ class VideoEditViewModel: ObservableObject {
     func updateZoomConfig(at index: Int, config: ZoomConfig?) {
         guard index < clips.count else { return }
         
-        let oldClip = clips[index]
-        let oldConfig = oldClip.zoomConfig
-        
-        var updatedClip = oldClip
+        var updatedClip = clips[index]
         updatedClip.zoomConfig = config
         clips[index] = updatedClip
         
-        // Register undo operation
-        registerUndo(
-            withTitle: config == nil ? "Remove Zoom" : "Add Zoom",
-            oldValue: oldConfig,
-            newValue: config
-        ) { [weak self] zoomConfig in
-            guard let self = self else { return }
-            var clip = self.clips[index]
-            clip.zoomConfig = zoomConfig
-            self.clips[index] = clip
-            Task {
-                await self.setupPlayerWithComposition()
-            }
-        }
+        // Add to history
+        addHistoryEntry(title: config == nil ? "Remove Zoom" : "Add Zoom")
 
         // Rebuild the composition to apply the zoom effect
         Task {
