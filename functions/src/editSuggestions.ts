@@ -24,11 +24,19 @@ const ZoomConfigSchema = z.object({
     zoomOutComplete: z.number().optional()
 });
 
+const DetectedSetSchema = z.object({
+    reps: z.number(),
+    startTime: z.number(),
+    endTime: z.number(),
+    keyJoint: z.string()
+});
+
 const VideoClipStateSchema = z.object({
     id: z.number(),
     startTime: z.number(),
     endTime: z.number(),
-    zoomConfig: ZoomConfigSchema.optional()
+    zoomConfig: ZoomConfigSchema.optional(),
+    detectedSets: z.array(DetectedSetSchema).optional()
 });
 
 const EditorStateSchema = z.object({
@@ -225,6 +233,8 @@ Clip ${i + 1}:
 - ID: ${clip.id}
 - Duration: ${clip.endTime - clip.startTime}s
 - Has zoom: ${clip.zoomConfig ? "Yes" : "No"}
+${clip.detectedSets ? `- Exercise Sets:${clip.detectedSets.map(set => `
+  • ${set.reps} reps from ${set.startTime.toFixed(1)}s to ${set.endTime.toFixed(1)}s (${set.keyJoint})`).join("")}` : "- No exercise sets detected"}
 `).join("\n")}
 
 EDIT HISTORY:
@@ -238,6 +248,13 @@ Based on this information, suggest ONE specific edit that would most improve the
 2. Engagement and visual interest
 3. Overall quality and polish
 4. The user's specific request
+5. Exercise set timing and transitions
+
+When suggesting edits for exercise clips:
+- Consider trimming dead time before/after exercise sets
+- Suggest zooming during key exercise moments
+- Maintain complete sets without splitting them
+- Ensure transitions align with natural exercise boundaries
 
 Provide your suggestion using the suggestEdit function, including:
 - A specific, actionable edit
@@ -279,7 +296,7 @@ export const suggestEdits = onCall(
     async (request): Promise<{ suggestions: EditSuggestion[] }> => {
 
         const genAI = new GoogleGenerativeAI(geminiApiKey.value() || "");
-        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
         const data = request.data;
 
         try {

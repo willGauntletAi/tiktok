@@ -196,6 +196,8 @@ class VideoEditViewModel: ObservableObject {
     }
     
     private func applyState(_ state: EditorState) async {
+        print("Applying editor state with \(state.clips.count) clips")
+        
         // First update the basic state
         clips = state.clips
         selectedClipIndex = state.selectedClipIndex
@@ -211,12 +213,21 @@ class VideoEditViewModel: ObservableObject {
         
         // Only rebuild composition if we have clips
         if !clips.isEmpty {
+            // Log pose detection state for debugging
+            for (index, clip) in clips.enumerated() {
+                print("Clip \(index) pose detection status: \(clip.poseDetectionStatus)")
+                print("  - Pose results: \(clip.poseResults?.count ?? 0)")
+                print("  - Detected sets: \(clip.detectedSets?.count ?? 0)")
+            }
+            
             await setupPlayerWithComposition()
         } else {
             // Reset other state when going to empty state
             composition = nil
             totalDuration = 0
         }
+        
+        print("State application complete")
     }
     
     // Remove UndoManager-related code from all action methods
@@ -225,15 +236,48 @@ class VideoEditViewModel: ObservableObject {
               let index = selectedClipIndex
         else { return }
         
+        print("🔄 Trimming clip \(clip.id):")
+        print("  Original state:")
+        print("    - Composition times: \(clip.startTime) to \(clip.endTime)")
+        print("    - Asset times: \(clip.assetStartTime) to \(clip.assetStartTime + clip.assetDuration)")
+        
+        // Calculate the relative offset within the clip
+        let relativeStartOffset = startTime - clip.startTime
+        let relativeEndOffset = endTime - clip.startTime
+        
+        // Update asset times
+        let newAssetStartTime = clip.assetStartTime + relativeStartOffset
+        let newAssetDuration = relativeEndOffset - relativeStartOffset
+        
         // Update composition times
         clip.startTime = startTime
         clip.endTime = endTime
-        
-        // Update asset times - calculate relative to original asset
-        let newAssetStartTime = clip.assetStartTime + (startTime - clip.startTime)
-        let newAssetDuration = endTime - startTime
         clip.assetStartTime = newAssetStartTime
         clip.assetDuration = newAssetDuration
+        
+        // Preserve pose detection status and results
+        if let poseResults = clip.poseResults {
+            // Filter pose results to only include those within the new time range
+            clip.poseResults = poseResults.filter { result in
+                let relativeTime = result.timestamp - clip.assetStartTime
+                return relativeTime >= 0 && relativeTime <= clip.assetDuration
+            }
+        }
+        
+        if let detectedSets = clip.detectedSets {
+            // Filter detected sets to only include those within the new time range
+            clip.detectedSets = detectedSets.filter { set in
+                let relativeStartTime = set.startTime - clip.assetStartTime
+                let relativeEndTime = set.endTime - clip.assetStartTime
+                return relativeStartTime >= 0 && relativeEndTime <= clip.assetDuration
+            }
+        }
+        
+        print("  New state:")
+        print("    - Composition times: \(clip.startTime) to \(clip.endTime)")
+        print("    - Asset times: \(clip.assetStartTime) to \(clip.assetStartTime + clip.assetDuration)")
+        print("    - Pose Results: \(clip.poseResults?.count ?? 0)")
+        print("    - Detected Sets: \(clip.detectedSets?.count ?? 0)")
         
         clips[index] = clip
         
@@ -1091,10 +1135,28 @@ class VideoEditViewModel: ObservableObject {
                         firstClip.thumbnail = firstThumbnail
                         firstClip.endTime = time
                         firstClip.assetDuration = relativeTime
+                        
+                        // Split pose results between the two clips
+                        if let poseResults = firstClip.poseResults {
+                            firstClip.poseResults = poseResults.filter { result in
+                                let relativeTime = result.timestamp - firstClip.assetStartTime
+                                return relativeTime >= 0 && relativeTime <= firstClip.assetDuration
+                            }
+                        }
+                        
+                        // Split detected sets between the two clips
+                        if let detectedSets = firstClip.detectedSets {
+                            firstClip.detectedSets = detectedSets.filter { set in
+                                let relativeStartTime = set.startTime - firstClip.assetStartTime
+                                let relativeEndTime = set.endTime - firstClip.assetStartTime
+                                return relativeStartTime >= 0 && relativeEndTime <= firstClip.assetDuration
+                            }
+                        }
+                        
                         clips[clipIndex] = firstClip
 
                         // Create and insert the second part
-                        let secondClip = VideoClip(
+                        var secondClip = VideoClip(
                             asset: currentClip.asset,
                             startTime: time,
                             endTime: currentClip.endTime,
@@ -1102,6 +1164,27 @@ class VideoEditViewModel: ObservableObject {
                             assetStartTime: relativeTime,
                             assetDuration: currentClip.assetDuration - relativeTime
                         )
+                        
+                        // Add pose results for the second clip
+                        if let poseResults = currentClip.poseResults {
+                            secondClip.poseResults = poseResults.filter { result in
+                                let relativeTime = result.timestamp - secondClip.assetStartTime
+                                return relativeTime >= 0 && relativeTime <= secondClip.assetDuration
+                            }
+                        }
+                        
+                        // Add detected sets for the second clip
+                        if let detectedSets = currentClip.detectedSets {
+                            secondClip.detectedSets = detectedSets.filter { set in
+                                let relativeStartTime = set.startTime - secondClip.assetStartTime
+                                let relativeEndTime = set.endTime - secondClip.assetStartTime
+                                return relativeStartTime >= 0 && relativeEndTime <= secondClip.assetDuration
+                            }
+                        }
+                        
+                        // Set pose detection status based on original clip
+                        secondClip.poseDetectionStatus = currentClip.poseDetectionStatus
+                        
                         clips.insert(secondClip, at: clipIndex + 1)
                     }
                 } else {
@@ -1251,6 +1334,7 @@ class VideoEditViewModel: ObservableObject {
                 }
 
                 updatedClip.poseResults = results
+                updatedClip.detectedSets = sets
                 updatedClip.poseDetectionStatus = .completed
                 updateClip(updatedClip)
                 print("🎬 Finished processing clip: \(clip.id)")
@@ -1308,6 +1392,18 @@ class VideoEditViewModel: ObservableObject {
             print("🔍 DEBUG: Starting AI suggestion request")
             print("📝 Prompt:", prompt)
             
+            // Wait for all pose detection to complete
+            for clip in clips {
+                while clip.poseDetectionStatus == .pending || clip.poseDetectionStatus == .inProgress {
+                    try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                    print("Waiting for pose detection to complete for clip \(clip.id)")
+                }
+                
+                if case let .failed(error) = clip.poseDetectionStatus {
+                    print("⚠️ Warning: Pose detection failed for clip \(clip.id): \(error.localizedDescription)")
+                }
+            }
+            
             // Log clips state
             print("\n📎 Current Clips State:")
             for (index, clip) in clips.enumerated() {
@@ -1344,7 +1440,15 @@ class VideoEditViewModel: ObservableObject {
                     id: clip.id,
                     startTime: clip.startTime,
                     endTime: clip.endTime,
-                    zoomConfig: zoomConfigDict
+                    zoomConfig: zoomConfigDict,
+                    detectedSets: clip.detectedSets?.map { set in
+                        AIDetectedSet(
+                            reps: set.reps,
+                            startTime: set.startTime,
+                            endTime: set.endTime,
+                            keyJoint: set.keyJoint
+                        )
+                    }
                 )
             }
             
@@ -1677,11 +1781,19 @@ extension Array {
 }
 
 // Supporting types for AI suggestions
+struct AIDetectedSet: Codable {
+    let reps: Int
+    let startTime: Double
+    let endTime: Double
+    let keyJoint: String
+}
+
 struct AIVideoClipState: Codable {
     let id: Int
     let startTime: Double
     let endTime: Double
     let zoomConfig: [String: Double]?
+    let detectedSets: [AIDetectedSet]?
 }
 
 struct AIEditSuggestionRequest: Codable {

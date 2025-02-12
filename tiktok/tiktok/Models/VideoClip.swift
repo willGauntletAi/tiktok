@@ -13,6 +13,7 @@ struct VideoClip: Identifiable {
     var zoomConfig: ZoomConfig?
     var poseDetectionStatus: PoseDetectionStatus = .pending
     var poseResults: [PoseResult]?
+    var detectedSets: [DetectedExerciseSet]?
 
     private static let idGenerator = AtomicIntGenerator()
 
