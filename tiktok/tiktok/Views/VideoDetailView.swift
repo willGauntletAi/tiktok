@@ -9,6 +9,7 @@ struct VideoDetailView: View {
     let onBack: (() -> Void)?
 
     @State private var playingVideoId: String?
+    @State private var isLoading = false
     @EnvironmentObject private var navigator: Navigator
 
     init(
@@ -38,14 +39,22 @@ struct VideoDetailView: View {
                                 .frame(width: geometry.size.width)
                                 .id(video.id)
                                 .onAppear {
-                                    playingVideoId = video.id
+                                    withAnimation {
+                                        playingVideoId = video.id
+                                    }
+                                }
+                                .onDisappear {
+                                    if playingVideoId == video.id {
+                                        playingVideoId = nil
+                                    }
                                 }
                             }
                         }
                     }
                     .scrollTargetBehavior(.paging)
                     .onAppear {
-                        let startId = videos[startIndex].id
+                        guard !videos.isEmpty else { return }
+                        let startId = videos[min(startIndex, videos.count - 1)].id
                         withAnimation {
                             proxy.scrollTo(startId, anchor: .center)
                             playingVideoId = startId
@@ -60,7 +69,8 @@ struct VideoDetailView: View {
                 if showBackButton {
                     Button(action: {
                         withAnimation {
-                            navigator.pop()
+                            playingVideoId = nil
+                            onBack?()
                         }
                     }) {
                         Image(systemName: "chevron.left")
@@ -114,13 +124,18 @@ struct VideoPageView: View {
                             if player == nil {
                                 player = AVPlayer(url: videoUrl)
                             }
+                            player?.seek(to: .zero)
                             player?.play()
                         } else {
                             player?.pause()
+                            // Release player resources when not playing
+                            player?.replaceCurrentItem(with: nil)
+                            player = nil
                         }
                     }
                     .onDisappear {
                         player?.pause()
+                        player?.replaceCurrentItem(with: nil)
                         player = nil
                     }
             }

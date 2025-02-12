@@ -2,75 +2,52 @@ import SwiftUI
 
 struct CreateSelectionView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedPath: NavigationPath = .init()
+    @EnvironmentObject private var navigator: Navigator
 
     var body: some View {
-        NavigationStack(path: $selectedPath) {
-            VStack(spacing: 24) {
-                Text("What would you like to create?")
-                    .font(.title2)
-                    .padding(.top)
+        VStack(spacing: 24) {
+            Text("What would you like to create?")
+                .font(.title2)
+                .padding(.top)
 
-                Button {
-                    selectedPath.append("exercise")
-                } label: {
-                    CreateOptionCard(
-                        title: "Exercise",
-                        description: "Create a single exercise with video instructions",
-                        systemImage: "figure.run",
-                        color: .blue
-                    )
-                }
-
-                Button {
-                    selectedPath.append("workout")
-                } label: {
-                    CreateOptionCard(
-                        title: "Workout",
-                        description: "Combine multiple exercises into a workout",
-                        systemImage: "figure.strengthtraining.traditional",
-                        color: .purple
-                    )
-                }
-
-                Button {
-                    selectedPath.append("workoutPlan")
-                } label: {
-                    CreateOptionCard(
-                        title: "Workout Plan",
-                        description: "Create a multi-day workout program",
-                        systemImage: "calendar.badge.clock",
-                        color: .orange
-                    )
-                }
-
-                Spacer()
+            Button {
+                navigator.navigate(to: .createExercise)
+            } label: {
+                CreateOptionCard(
+                    title: "Exercise",
+                    description: "Create a single exercise with video instructions",
+                    systemImage: "figure.run",
+                    color: .blue
+                )
             }
-            .padding()
-            .navigationTitle("Create")
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(for: String.self) { destination in
-                switch destination {
-                case "exercise":
-                    CreateExerciseView(onComplete: {
-                        selectedPath = NavigationPath()
-                        dismiss()
-                    })
-                case "workout":
-                    CreateWorkoutView(onComplete: {
-                        selectedPath = NavigationPath()
-                        dismiss()
-                    })
-                case "workoutPlan":
-                    CreateWorkoutPlanView(onComplete: {
-                        selectedPath = NavigationPath()
-                        dismiss()
-                    })
-                default:
-                    EmptyView()
-                }
+
+            Button {
+                navigator.navigate(to: .createWorkout)
+            } label: {
+                CreateOptionCard(
+                    title: "Workout",
+                    description: "Combine multiple exercises into a workout",
+                    systemImage: "figure.strengthtraining.traditional",
+                    color: .purple
+                )
             }
+
+            Button {
+                navigator.navigate(to: .createWorkoutPlan)
+            } label: {
+                CreateOptionCard(
+                    title: "Workout Plan",
+                    description: "Create a multi-day workout program",
+                    systemImage: "calendar.badge.clock",
+                    color: .orange
+                )
+            }
+
+            Spacer()
         }
+        .padding()
+        .navigationTitle("Create")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

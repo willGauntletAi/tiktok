@@ -10,6 +10,9 @@ enum Destination: Hashable, Identifiable {
     case workout(Workout)
     case workoutPlan(WorkoutPlan)
     case profileVideo(workoutPlan: WorkoutPlan)
+    case createExercise
+    case createWorkout
+    case createWorkoutPlan
 
     var id: String {
         switch self {
@@ -31,6 +34,12 @@ enum Destination: Hashable, Identifiable {
             return "workoutPlan-\(plan.id)"
         case let .profileVideo(workoutPlan):
             return "profileVideo-\(workoutPlan.id)"
+        case .createExercise:
+            return "createExercise"
+        case .createWorkout:
+            return "createWorkout"
+        case .createWorkoutPlan:
+            return "createWorkoutPlan"
         }
     }
 
@@ -105,6 +114,18 @@ func view(for destination: Destination) -> some View {
         )
     case let .profileVideo(workoutPlan):
         ProfileVideoWrapper(workoutPlan: workoutPlan)
+    case .createExercise:
+        CreateExerciseView(onComplete: {
+            Navigator.shared.pop()
+        })
+    case .createWorkout:
+        CreateWorkoutView(onComplete: {
+            Navigator.shared.pop()
+        })
+    case .createWorkoutPlan:
+        CreateWorkoutPlanView(onComplete: {
+            Navigator.shared.pop()
+        })
     }
 }
 
@@ -124,7 +145,8 @@ final class Navigator: ObservableObject {
 
         switch destination {
         case .videoDetail, .videoFeed, .profile, .userProfile,
-             .exercise, .workout, .workoutPlan, .profileVideo:
+             .exercise, .workout, .workoutPlan, .profileVideo,
+             .createExercise, .createWorkout, .createWorkoutPlan:
             path.append(destination)
         case .exerciseCompletion:
             presentedSheet = destination

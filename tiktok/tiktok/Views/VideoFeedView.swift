@@ -25,22 +25,19 @@ struct ProfileVideoWrapper: View {
 
 struct VideoFeedView: View {
     let initialVideos: [[any VideoContent]]
-    let initialIndex: Int
-
-    @State private var currentIndex: Int?
+    let startingAt: Int
     @State private var videos: [[any VideoContent]]
-    @State private var isLoadingMore = false
-    @State private var recommendations: [VideoRecommendation] = []
+    @State private var currentIndex: Int?
+    @State private var visibleVideoId: String?
     @EnvironmentObject private var navigator: Navigator
-
+    @State private var isLoading = false
     private let recommendationService = RecommendationService()
 
-    init(initialVideos: [[any VideoContent]], startingAt index: Int = 0) {
+    init(initialVideos: [[any VideoContent]], startingAt: Int = 0) {
         self.initialVideos = initialVideos
-        initialIndex = index
-        // Initialize state variables
+        self.startingAt = startingAt
         _videos = State(initialValue: initialVideos)
-        _currentIndex = State(initialValue: initialVideos.isEmpty ? nil : index)
+        _currentIndex = State(initialValue: startingAt)
     }
 
     var body: some View {
@@ -54,17 +51,25 @@ struct VideoFeedView: View {
                             showBackButton: true,
                             onBack: {
                                 print("🎬 Back button tapped")
-                                navigator.pop()
+                                withAnimation {
+                                    navigator.pop()
+                                }
                             }
                         )
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .id(index)
                         .onAppear {
                             print("🎬 Video at index \(index) appeared")
-                            if index >= videos.count - 2 {
+                            visibleVideoId = videos[index].first?.id
+                            if index >= videos.count - 2 && !isLoading {
                                 Task {
                                     await loadMoreVideos()
                                 }
+                            }
+                        }
+                        .onDisappear {
+                            if visibleVideoId == videos[index].first?.id {
+                                visibleVideoId = nil
                             }
                         }
                     }
@@ -75,6 +80,7 @@ struct VideoFeedView: View {
             .onChange(of: currentIndex) { _, newValue in
                 if let index = newValue {
                     print("🎬 Scrolled to index: \(index)")
+                    visibleVideoId = videos[index].first?.id
                 }
             }
         }
@@ -85,15 +91,24 @@ struct VideoFeedView: View {
                 .onEnded { value in
                     if value.translation.width > 100 {
                         print("🎬 Left swipe detected, popping navigation")
-                        navigator.pop()
+                        withAnimation {
+                            navigator.pop()
+                        }
                     }
                 }
         )
-        .task {
-            // Only load more if we have initial videos to base recommendations on
-            if !initialVideos.isEmpty {
-                await loadMoreVideos()
+        .onAppear {
+            print("🎬 VideoFeedView appeared with \(videos.count) videos")
+            if videos.isEmpty {
+                Task {
+                    await loadMoreVideos()
+                }
+            } else {
+                visibleVideoId = videos[startingAt].first?.id
             }
+        }
+        .onDisappear {
+            visibleVideoId = nil
         }
     }
 
@@ -290,67 +305,39 @@ struct VideoFeedView: View {
     }
 
     private func loadMoreVideos() async {
-        guard !isLoadingMore else { return }
-        isLoadingMore = true
-        defer { isLoadingMore = false }
-
+        guard !isLoading else { return }
+        
+        isLoading = true
+        defer { isLoading = false }
+        
+        print("🎬 Getting recommendations based on: \(videos.last?.map { $0.id } ?? [])")
+        
         do {
-            // Use the last few video IDs to get recommendations
-            let videoIds = videos.suffix(4).compactMap { $0.first?.id }
-            print("🎬 Getting recommendations based on: \(videoIds)")
-
-            let newRecommendations = try await recommendationService.getRecommendations(
-                forVideos: videoIds
+            let recommendations = try await recommendationService.getRecommendations(
+                forVideos: videos.last?.map { $0.id } ?? []
             )
-
-            // Fetch each recommended video from Firestore
+            
+            // Process each recommendation
             let db = Firestore.firestore()
             var newVideoLists: [[any VideoContent]] = []
-
-            for recommendation in newRecommendations {
+            
+            for recommendation in recommendations {
                 do {
                     let doc = try await db.collection("videos").document(recommendation.videoId).getDocument()
                     let videosToShow = try await handleVideoDocument(doc, db: db)
-
-                    // Handle different content types appropriately
-                    if let firstVideo = videosToShow.first {
-                        switch firstVideo {
-                        case is Exercise:
-                            // For exercises, create individual lists
-                            for video in videosToShow {
-                                newVideoLists.append([video])
-                            }
-
-                        case is Workout:
-                            // For workouts, keep the workout and its exercises together
-                            if let workout = firstVideo as? Workout {
-                                var allVideos: [any VideoContent] = [workout]
-                                allVideos.append(contentsOf: workout.exercises)
-                                newVideoLists.append(allVideos)
-                            }
-
-                        case is WorkoutPlan:
-                            // For workout plans, use getAllVideos to get everything in the right order
-                            if let workoutPlan = firstVideo as? WorkoutPlan {
-                                newVideoLists.append(workoutPlan.getAllVideos())
-                            }
-
-                        default:
-                            print("🎬 Unknown video type")
-                            continue
-                        }
+                    if !videosToShow.isEmpty {
+                        newVideoLists.append(videosToShow)
                     }
                 } catch {
-                    print("❌ Error fetching video: \(error)")
-                    continue
+                    print("❌ Error processing video recommendation: \(error)")
                 }
             }
-
-            print("🎬 Loaded \(newVideoLists.count) new video lists")
+            
             await MainActor.run {
-                videos.append(contentsOf: newVideoLists)
+                if !newVideoLists.isEmpty {
+                    videos.append(contentsOf: newVideoLists)
+                }
             }
-
         } catch {
             print("❌ Error loading more videos: \(error)")
         }
