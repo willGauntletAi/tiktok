@@ -466,7 +466,6 @@ struct VideoEditView: View {
     @State private var showSongGeneration = false
     @State private var selectedTab = 0
     @Environment(\.dismiss) private var dismiss
-    @State private var showingAIPrompt = false
     
     var onVideoEdited: ((URL) -> Void)?
     
@@ -526,14 +525,6 @@ struct VideoEditView: View {
                                 .buttonStyle(.borderedProminent)
                                 .tint(.blue)
                                 .disabled(isAddingClip || viewModel.isProcessing)
-
-                                // Generate Music button
-                                Button("Generate Music") {
-                                    showSongGeneration = true
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.purple)
-                                .disabled(viewModel.isProcessing)
 
                                 // Split button
                                 if !viewModel.clips.isEmpty {
@@ -621,14 +612,6 @@ struct VideoEditView: View {
                         .disabled(viewModel.isProcessing)
                     }
                 }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingAIPrompt = true
-                    } label: {
-                        Label("AI Suggestions", systemImage: "sparkles.rectangle.stack")
-                    }
-                }
             }
         }
         .interactiveDismissDisabled()
@@ -670,9 +653,6 @@ struct VideoEditView: View {
                 print("Generated song at: \(storageRef)")
                 // TODO: Add the song to the video
             }
-        }
-        .sheet(isPresented: $showingAIPrompt) {
-            AIPromptView(viewModel: viewModel)
         }
         // Add shake gesture support
         .onShake {
