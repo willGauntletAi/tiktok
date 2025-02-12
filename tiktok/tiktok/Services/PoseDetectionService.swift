@@ -2,7 +2,7 @@ import AVFoundation
 import Vision
 
 actor PoseDetectionService {
-    private var activeDetections: [UUID: Task<[PoseResult], Error>] = [:]
+    private var activeDetections: [Int: Task<[PoseResult], Error>] = [:]
 
     func detectPoses(for clip: VideoClip) async throws -> [PoseResult] {
         // Cancel any existing detection for this clip
@@ -96,7 +96,7 @@ actor PoseDetectionService {
         }
     }
 
-    func cancelDetection(for clipId: UUID) {
+    func cancelDetection(for clipId: Int) {
         activeDetections[clipId]?.cancel()
         activeDetections[clipId] = nil
     }

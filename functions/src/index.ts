@@ -7,9 +7,10 @@ admin.initializeApp();
 // Import all functions
 import { getRecommendations } from "./recommendations";
 import { generateSong } from "./songs";
+import { suggestEdits } from "./editSuggestions";
 
 // Export all functions
-export { getRecommendations, generateSong };
+export { getRecommendations, generateSong, suggestEdits };
 
 // Update user document when it's created
 export const onUserDocCreated = onDocumentCreated("users/{userId}", async (event) => {

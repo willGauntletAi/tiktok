@@ -3,6 +3,7 @@
 import CoreMedia
 import SwiftUI
 import UIKit
+import FirebaseFunctions
 
 enum VideoError: Error {
     case noVideoTrack
@@ -16,11 +17,23 @@ struct EditorState {
     let selectedClipIndex: Int?
 }
 
+enum EditAction {
+    case addClip(clipId: Int)
+    case deleteClip(index: Int)
+    case moveClip(from: Int, to: Int)
+    case swapClips(index: Int)
+    case splitClip(time: Double)
+    case trimClip(clipId: Int, startTime: Double, endTime: Double)
+    case updateVolume(clipId: Int, volume: Double)
+    case updateZoom(clipId: Int, config: ZoomConfig?)
+}
+
 struct EditHistoryEntry: Identifiable {
     let id = UUID()
     let title: String
     let timestamp: Date
     let state: EditorState
+    let action: EditAction
 }
 
 @MainActor
@@ -106,7 +119,8 @@ class VideoEditViewModel: ObservableObject {
         let newEntry = EditHistoryEntry(
             title: title,
             timestamp: Date(),
-            state: newState
+            state: newState,
+            action: .addClip(clipId: clips.last?.id ?? 0)
         )
         editHistory.append(newEntry)
         currentHistoryIndex = editHistory.count - 1
@@ -214,7 +228,18 @@ class VideoEditViewModel: ObservableObject {
         clips[index] = clip
         
         // Add to history
-        addHistoryEntry(title: "Trim Clip")
+        let newState = EditorState(
+            clips: clips,
+            selectedClipIndex: selectedClipIndex
+        )
+        let newEntry = EditHistoryEntry(
+            title: "Trim Clip",
+            timestamp: Date(),
+            state: newState,
+            action: .trimClip(clipId: clip.id, startTime: startTime, endTime: endTime)
+        )
+        editHistory.append(newEntry)
+        currentHistoryIndex = editHistory.count - 1
 
         // Update player with new composition
         Task {
@@ -573,7 +598,18 @@ class VideoEditViewModel: ObservableObject {
         clips[index] = clip
         
         // Add to history
-        addHistoryEntry(title: "Change Volume")
+        let newState = EditorState(
+            clips: clips,
+            selectedClipIndex: selectedClipIndex
+        )
+        let newEntry = EditHistoryEntry(
+            title: "Change Volume",
+            timestamp: Date(),
+            state: newState,
+            action: .updateVolume(clipId: clip.id, volume: volume)
+        )
+        editHistory.append(newEntry)
+        currentHistoryIndex = editHistory.count - 1
         
         updatePlayerVolume()
     }
@@ -588,7 +624,18 @@ class VideoEditViewModel: ObservableObject {
         }
         
         // Add to history
-        addHistoryEntry(title: "Move Clip")
+        let newState = EditorState(
+            clips: clips,
+            selectedClipIndex: selectedClipIndex
+        )
+        let newEntry = EditHistoryEntry(
+            title: "Move Clip",
+            timestamp: Date(),
+            state: newState,
+            action: .moveClip(from: source.first ?? 0, to: destination)
+        )
+        editHistory.append(newEntry)
+        currentHistoryIndex = editHistory.count - 1
         
         // Update player with new clip order
         Task {
@@ -597,6 +644,7 @@ class VideoEditViewModel: ObservableObject {
     }
 
     func deleteClip(at index: Int) {
+        let clipId = clips[index].id
         // Remove the clip from the array
         clips.remove(at: index)
 
@@ -608,7 +656,18 @@ class VideoEditViewModel: ObservableObject {
         }
         
         // Add to history
-        addHistoryEntry(title: "Delete Clip")
+        let newState = EditorState(
+            clips: clips,
+            selectedClipIndex: selectedClipIndex
+        )
+        let newEntry = EditHistoryEntry(
+            title: "Delete Clip",
+            timestamp: Date(),
+            state: newState,
+            action: .deleteClip(index: index)
+        )
+        editHistory.append(newEntry)
+        currentHistoryIndex = editHistory.count - 1
 
         // Create new composition with remaining clips
         Task {
@@ -844,7 +903,18 @@ class VideoEditViewModel: ObservableObject {
         }
         
         // Add to history
-        addHistoryEntry(title: "Swap Clips")
+        let newState = EditorState(
+            clips: clips,
+            selectedClipIndex: selectedClipIndex
+        )
+        let newEntry = EditHistoryEntry(
+            title: "Swap Clips",
+            timestamp: Date(),
+            state: newState,
+            action: .swapClips(index: index)
+        )
+        editHistory.append(newEntry)
+        currentHistoryIndex = editHistory.count - 1
 
         // Rebuild the composition with the new clip order
         Task {
@@ -1117,7 +1187,18 @@ class VideoEditViewModel: ObservableObject {
             }
 
             // Add to history
-            addHistoryEntry(title: "Split Clip")
+            let newState = EditorState(
+                clips: clips,
+                selectedClipIndex: selectedClipIndex
+            )
+            let newEntry = EditHistoryEntry(
+                title: "Split Clip",
+                timestamp: Date(),
+                state: newState,
+                action: .splitClip(time: time)
+            )
+            editHistory.append(newEntry)
+            currentHistoryIndex = editHistory.count - 1
 
             print("Successfully completed splitClip operation")
         } catch {
@@ -1153,7 +1234,18 @@ class VideoEditViewModel: ObservableObject {
         clips[index] = updatedClip
         
         // Add to history
-        addHistoryEntry(title: config == nil ? "Remove Zoom" : "Add Zoom")
+        let newState = EditorState(
+            clips: clips,
+            selectedClipIndex: selectedClipIndex
+        )
+        let newEntry = EditHistoryEntry(
+            title: config == nil ? "Remove Zoom" : "Add Zoom",
+            timestamp: Date(),
+            state: newState,
+            action: .updateZoom(clipId: updatedClip.id, config: config)
+        )
+        editHistory.append(newEntry)
+        currentHistoryIndex = editHistory.count - 1
 
         // Rebuild the composition to apply the zoom effect
         Task {
@@ -1225,6 +1317,201 @@ class VideoEditViewModel: ObservableObject {
         let tempDir = FileManager.default.temporaryDirectory
         try? FileManager.default.removeItem(at: tempDir)
     }
+
+    func requestAIEditSuggestion(prompt: String) async {
+        await MainActor.run {
+            isProcessing = true
+        }
+        
+        defer {
+            Task { @MainActor in
+                isProcessing = false
+            }
+        }
+        
+        do {
+            print("🔍 DEBUG: Starting AI suggestion request")
+            print("📝 Prompt:", prompt)
+            
+            // Log clips state
+            print("\n📎 Current Clips State:")
+            for (index, clip) in clips.enumerated() {
+                print("  Clip \(index):")
+                print("    - ID:", clip.id)
+                print("    - Start Time:", clip.startTime)
+                print("    - End Time:", clip.endTime)
+                print("    - Has ZoomConfig:", clip.zoomConfig != nil)
+                if let config = clip.zoomConfig {
+                    print("    - ZoomConfig:")
+                    print("      - startZoomIn:", config.startZoomIn)
+                    print("      - zoomInComplete:", String(describing: config.zoomInComplete))
+                    print("      - startZoomOut:", String(describing: config.startZoomOut))
+                    print("      - zoomOutComplete:", String(describing: config.zoomOutComplete))
+                }
+            }
+            
+            // Create and log AIVideoClipStates
+            let aiClipStates = clips.map { clip in
+                // Convert ZoomConfig to dictionary format
+                let zoomConfigDict: [String: Double]?
+                if let config = clip.zoomConfig {
+                    zoomConfigDict = [
+                        "startZoomIn": config.startZoomIn,
+                        "zoomInComplete": config.zoomInComplete ?? -1,
+                        "startZoomOut": config.startZoomOut ?? -1,
+                        "zoomOutComplete": config.zoomOutComplete ?? -1
+                    ].filter { $0.value != -1 }
+                } else {
+                    zoomConfigDict = nil
+                }
+                
+                return AIVideoClipState(
+                    id: clip.id,
+                    startTime: clip.startTime,
+                    endTime: clip.endTime,
+                    zoomConfig: zoomConfigDict
+                )
+            }
+            
+            print("\n🎬 AI Clip States:")
+            for (index, state) in aiClipStates.enumerated() {
+                print("  State \(index):")
+                print("    - ID:", state.id)
+                print("    - Start Time:", state.startTime)
+                print("    - End Time:", state.endTime)
+                print("    - ZoomConfig:", state.zoomConfig ?? "nil")
+            }
+            
+            // Create and log editor state
+            let currentState = AIEditorState(
+                clips: aiClipStates,
+                selectedClipIndex: selectedClipIndex
+            )
+            
+            print("\n📋 Editor State:")
+            print("  - Number of clips:", currentState.clips.count)
+            print("  - Selected Index:", String(describing: currentState.selectedClipIndex))
+            
+            // Create and log edit history
+            let aiEditHistory = editHistory.map { entry in
+                // Convert EditAction to AIEditAction
+                let aiAction: AIEditAction
+                switch entry.action {
+                case .addClip(let clipId):
+                    aiAction = AIEditAction(type: "addClip", clipId: String(clipId), index: nil, from: nil, to: nil, time: nil, startTime: nil, endTime: nil, volume: nil, config: nil)
+                case .deleteClip(let index):
+                    aiAction = AIEditAction(type: "deleteClip", clipId: nil, index: index, from: nil, to: nil, time: nil, startTime: nil, endTime: nil, volume: nil, config: nil)
+                case .moveClip(let from, let to):
+                    aiAction = AIEditAction(type: "moveClip", clipId: nil, index: nil, from: from, to: to, time: nil, startTime: nil, endTime: nil, volume: nil, config: nil)
+                case .swapClips(let index):
+                    aiAction = AIEditAction(type: "swapClips", clipId: nil, index: index, from: nil, to: nil, time: nil, startTime: nil, endTime: nil, volume: nil, config: nil)
+                case .splitClip(let time):
+                    aiAction = AIEditAction(type: "splitClip", clipId: nil, index: nil, from: nil, to: nil, time: time, startTime: nil, endTime: nil, volume: nil, config: nil)
+                case .trimClip(let clipId, let startTime, let endTime):
+                    aiAction = AIEditAction(type: "trimClip", clipId: String(clipId), index: nil, from: nil, to: nil, time: nil, startTime: startTime, endTime: endTime, volume: nil, config: nil)
+                case .updateVolume(let clipId, let volume):
+                    aiAction = AIEditAction(type: "updateVolume", clipId: String(clipId), index: nil, from: nil, to: nil, time: nil, startTime: nil, endTime: nil, volume: volume, config: nil)
+                case .updateZoom(let clipId, let config):
+                    let configDict = config.map { conf in
+                        [
+                            "startZoomIn": conf.startZoomIn,
+                            "zoomInComplete": conf.zoomInComplete,
+                            "startZoomOut": conf.startZoomOut,
+                            "zoomOutComplete": conf.zoomOutComplete
+                        ].compactMapValues { $0 }
+                    }
+                    aiAction = AIEditAction(type: "updateZoom", clipId: String(clipId), index: nil, from: nil, to: nil, time: nil, startTime: nil, endTime: nil, volume: nil, config: configDict)
+                }
+                
+                return AIEditHistoryEntry(
+                    id: entry.id.uuidString,
+                    title: entry.title,
+                    timestamp: entry.timestamp,
+                    action: aiAction,
+                    isApplied: true
+                )
+            }
+            
+            print("\n📜 Edit History:")
+            for (index, entry) in aiEditHistory.enumerated() {
+                print("  Entry \(index):")
+                print("    - ID:", entry.id)
+                print("    - Title:", entry.title)
+                print("    - Timestamp:", entry.timestamp)
+                print("    - Action:", entry.action)
+                print("    - Is Applied:", entry.isApplied)
+            }
+            
+            // Create final request
+            let request = AIEditSuggestionRequest(
+                prompt: prompt,
+                currentState: currentState,
+                editHistory: aiEditHistory
+            )
+            
+            // Configure encoder (removed date encoding strategy since we're using TimeInterval)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            encoder.keyEncodingStrategy = .useDefaultKeys
+            
+            // Encode request to JSON
+            let jsonData = try encoder.encode(request)
+            
+            print("\n📦 Final JSON Request:")
+            if let jsonString = String(data: jsonData, encoding: .utf8) {
+                print(jsonString)
+            }
+            
+            print("\n🚀 Calling Cloud Function...")
+            
+            // Convert to dictionary before sending to Firebase
+            let dictionary = try JSONSerialization.jsonObject(with: jsonData, options: []) as! [String: Any]
+            
+            // Inside requestAIEditSuggestion, before calling the Cloud Function:
+            print("\n🔍 Dictionary being sent to Firebase:")
+            if let prettyPrintedJson = try? JSONSerialization.data(withJSONObject: dictionary, options: .prettyPrinted),
+               let jsonString = String(data: prettyPrintedJson, encoding: .utf8) {
+                print(jsonString)
+            }
+            
+            // Call the Cloud Function with the dictionary
+            let functions = Functions.functions()
+            let result = try await functions.httpsCallable("suggestEdits").call(dictionary)
+            
+            print("\n✅ Received response from Cloud Function")
+            
+            // Parse the response
+            guard let data = result.data as? [String: Any],
+                  let suggestions = data["suggestions"] as? [[String: Any]],
+                  let suggestion = suggestions.first
+            else {
+                print("❌ Error: Invalid response format")
+                return
+            }
+            
+            // Log the suggestion
+            print("\n💡 AI Suggestion:")
+            print("Action:", suggestion["action"] ?? "No action")
+            print("Explanation:", suggestion["explanation"] ?? "No explanation")
+            print("Confidence:", suggestion["confidence"] ?? "No confidence score")
+            if let impact = suggestion["impact"] as? [String: Double] {
+                print("Impact:")
+                print("- Pacing:", impact["pacing"] ?? 0)
+                print("- Engagement:", impact["engagement"] ?? 0)
+                print("- Quality:", impact["quality"] ?? 0)
+            }
+            
+        } catch {
+            print("\n❌ Error requesting AI suggestion:")
+            print("Error type: \(type(of: error))")
+            print("Error description: \(error.localizedDescription)")
+            if let nsError = error as NSError? {
+                print("Error domain: \(nsError.domain)")
+                print("Error code: \(nsError.code)")
+                print("Error user info: \(nsError.userInfo)")
+            }
+        }
+    }
 }
 
 // Helper extension to safely access array elements
@@ -1233,3 +1520,66 @@ extension Array {
         return indices.contains(index) ? self[index] : nil
     }
 }
+
+// Supporting types for AI suggestions
+struct AIVideoClipState: Codable {
+    let id: Int
+    let startTime: Double
+    let endTime: Double
+    let zoomConfig: [String: Double]?
+}
+
+struct AIEditSuggestionRequest: Codable {
+    let prompt: String
+    let currentState: AIEditorState
+    let editHistory: [AIEditHistoryEntry]
+}
+
+struct AIEditorState: Codable {
+    let clips: [AIVideoClipState]
+    let selectedClipIndex: Int?
+}
+
+struct AIEditHistoryEntry: Codable {
+    let id: String
+    let title: String
+    let timestamp: TimeInterval
+    let action: AIEditAction
+    let isApplied: Bool
+    
+    init(id: String, title: String, timestamp: Date, action: AIEditAction, isApplied: Bool) {
+        self.id = id
+        self.title = title
+        self.timestamp = timestamp.timeIntervalSince1970 * 1000
+        self.action = action
+        self.isApplied = isApplied
+    }
+}
+
+// Match the TypeScript schema exactly
+struct AIEditAction: Codable {
+    let type: String
+    let clipId: String?
+    let index: Int?
+    let from: Int?
+    let to: Int?
+    let time: Double?
+    let startTime: Double?
+    let endTime: Double?
+    let volume: Double?
+    let config: [String: Double]?
+    
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case clipId
+        case index
+        case from
+        case to
+        case time
+        case startTime
+        case endTime
+        case volume
+        case config
+    }
+}
+

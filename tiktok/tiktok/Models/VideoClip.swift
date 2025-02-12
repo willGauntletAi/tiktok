@@ -2,7 +2,7 @@ import AVFoundation
 import UIKit
 
 struct VideoClip: Identifiable {
-    let id: UUID
+    let id: Int
     let asset: AVAsset
     var startTime: Double // Position in composition
     var endTime: Double // Position in composition
@@ -14,8 +14,10 @@ struct VideoClip: Identifiable {
     var poseDetectionStatus: PoseDetectionStatus = .pending
     var poseResults: [PoseResult]?
 
+    private static let idGenerator = AtomicIntGenerator()
+
     init(asset: AVAsset, startTime: Double = 0, endTime: Double? = nil, thumbnail: UIImage? = nil, assetStartTime: Double = 0, assetDuration: Double? = nil) {
-        id = UUID()
+        id = Self.idGenerator.next()
         self.asset = asset
         self.startTime = startTime
         self.endTime = endTime ?? 0 // Will be set after loading duration
@@ -32,7 +34,20 @@ struct VideoClip: Identifiable {
     }
 }
 
-struct ZoomConfig {
+// Thread-safe ID generator
+final class AtomicIntGenerator {
+    private var current = 0
+    private let queue = DispatchQueue(label: "com.tiktok.idgenerator")
+    
+    func next() -> Int {
+        queue.sync {
+            current += 1
+            return current
+        }
+    }
+}
+
+struct ZoomConfig: Codable {
     var startZoomIn: Double // Required - when to start zooming in
     var zoomInComplete: Double? // Optional - when zoom in completes
     var startZoomOut: Double? // Optional - when to start zooming out
