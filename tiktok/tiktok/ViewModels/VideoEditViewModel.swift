@@ -147,14 +147,60 @@ class VideoEditViewModel: ObservableObject {
         
         guard indexToRedoTo < editHistory.count else { return }
         
-        currentHistoryIndex = indexToRedoTo
-        await applyState(editHistory[indexToRedoTo].state)
+        // When redoing from empty state (-1), we need to ensure we fully restore the state
+        if currentHistoryIndex == -1 {
+            // Reset player state first
+            if let observer = timeObserver {
+                _player?.removeTimeObserver(observer)
+                timeObserver = nil
+            }
+            _player?.pause()
+            _player = nil
+            playerItem = nil
+            
+            // Apply the state first
+            let targetState = editHistory[indexToRedoTo].state
+            clips = targetState.clips
+            selectedClipIndex = targetState.selectedClipIndex
+            currentHistoryIndex = indexToRedoTo
+            
+            // Create a new composition
+            let newComposition = AVMutableComposition()
+            composition = newComposition
+            
+            // Then rebuild everything if we have clips
+            if !clips.isEmpty {
+                try? await rebuildComposition()
+            }
+        } else {
+            // Normal redo operation
+            currentHistoryIndex = indexToRedoTo
+            await applyState(editHistory[indexToRedoTo].state)
+        }
     }
     
     private func applyState(_ state: EditorState) async {
+        // First update the basic state
         clips = state.clips
         selectedClipIndex = state.selectedClipIndex
-        await setupPlayerWithComposition()
+        
+        // Reset player state first if needed
+        if let observer = timeObserver {
+            _player?.removeTimeObserver(observer)
+            timeObserver = nil
+        }
+        _player?.pause()
+        _player = nil
+        playerItem = nil
+        
+        // Only rebuild composition if we have clips
+        if !clips.isEmpty {
+            await setupPlayerWithComposition()
+        } else {
+            // Reset other state when going to empty state
+            composition = nil
+            totalDuration = 0
+        }
     }
     
     // Remove UndoManager-related code from all action methods
@@ -762,11 +808,12 @@ class VideoEditViewModel: ObservableObject {
 
     private func setupPlayerWithComposition() async {
         print("Starting setupPlayerWithComposition")
-        guard let _ = composition else {
-            print("No composition available")
-            return
+        
+        // Create new composition if none exists
+        if composition == nil {
+            composition = AVMutableComposition()
         }
-
+        
         do {
             try await rebuildComposition()
             print("Successfully completed setupPlayerWithComposition")
