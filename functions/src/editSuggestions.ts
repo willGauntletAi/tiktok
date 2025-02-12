@@ -144,19 +144,19 @@ const geminiEditFunction: Tool = {
                         },
                         index: {
                             type: SchemaType.NUMBER,
-                            description: "Required for deleteClip and swapClips: The index of the clip to modify"
+                            description: "Required for deleteClip and swapClips: The index of the clip to modify. This is the index of the clip in the currentState.clips array. It is zero-indexed."
                         },
                         from: {
                             type: SchemaType.NUMBER,
-                            description: "Required for moveClip: Source index"
+                            description: "Required for moveClip: Source index. This is the index of the clip in the currentState.clips array. It is zero-indexed."
                         },
                         to: {
                             type: SchemaType.NUMBER,
-                            description: "Required for moveClip: Destination index"
+                            description: "Required for moveClip: Destination index. This is the index of the clip in the currentState.clips array. It is zero-indexed."
                         },
                         time: {
                             type: SchemaType.NUMBER,
-                            description: "Required for splitClip: Time position to split at"
+                            description: "Required for splitClip: Time position to split at. This is the time in seconds from the start of the video, not the start of the clip."
                         },
                         clipId: {
                             type: SchemaType.STRING,

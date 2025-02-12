@@ -359,10 +359,16 @@ struct HistoryEntryView: View {
             }
         }) {
             HStack {
-                VStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(entry.title)
                         .font(.headline)
                         .foregroundColor(.primary)
+                    if let prompt = entry.prompt {
+                        Text(prompt)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
                     Text(entry.timestamp, style: .time)
                         .font(.caption)
                         .foregroundColor(.gray)
@@ -382,31 +388,71 @@ struct HistoryEntryView: View {
 
 struct EditHistoryView: View {
     @ObservedObject var viewModel: VideoEditViewModel
+    @State private var prompt: String = ""
+    @State private var isSubmitting = false
     
     var body: some View {
-        if viewModel.editHistory.isEmpty {
-            EmptyHistoryView()
-        } else {
-            LazyVStack(spacing: 0) {
-                ForEach(Array(viewModel.editHistory.enumerated()), id: \.element.id) { index, entry in
-                    HistoryEntryView(
-                        entry: entry,
-                        index: index,
-                        currentHistoryIndex: viewModel.currentHistoryIndex,
-                        onUndo: { targetIndex in
-                            await viewModel.undo(to: targetIndex)
-                        },
-                        onRedo: { targetIndex in
-                            await viewModel.redo(to: targetIndex)
-                        }
-                    )
+        VStack(spacing: 0) {
+            // Prompt input section
+            VStack(spacing: 8) {
+                TextField("Enter your editing suggestion...", text: $prompt)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .padding(.horizontal)
+                
+                Button(action: {
+                    guard !prompt.isEmpty else { return }
+                    isSubmitting = true
                     
-                    if index < viewModel.editHistory.count - 1 {
-                        Divider()
+                    Task {
+                        await viewModel.requestAIEditSuggestion(prompt: prompt)
+                        prompt = "" // Clear the prompt after submission
+                        isSubmitting = false
+                    }
+                }) {
+                    HStack {
+                        if isSubmitting {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                        }
+                        Text(isSubmitting ? "Processing..." : "Get AI Suggestion")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(prompt.isEmpty || isSubmitting)
+                .padding(.horizontal)
+            }
+            .padding(.vertical)
+            .background(Color(.systemBackground))
+            
+            Divider()
+            
+            // History list
+            if viewModel.editHistory.isEmpty {
+                EmptyHistoryView()
+            } else {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(viewModel.editHistory.enumerated()).reversed(), id: \.element.id) { index, entry in
+                        HistoryEntryView(
+                            entry: entry,
+                            index: index,
+                            currentHistoryIndex: viewModel.currentHistoryIndex,
+                            onUndo: { targetIndex in
+                                await viewModel.undo(to: targetIndex)
+                            },
+                            onRedo: { targetIndex in
+                                await viewModel.redo(to: targetIndex)
+                            }
+                        )
+                        
+                        if index > 0 {
+                            Divider()
+                        }
                     }
                 }
+                .background(Color(.systemGroupedBackground))
             }
-            .background(Color(.systemGroupedBackground))
         }
     }
 }

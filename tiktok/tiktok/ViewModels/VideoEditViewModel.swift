@@ -34,6 +34,7 @@ struct EditHistoryEntry: Identifiable {
     let timestamp: Date
     let state: EditorState
     let action: EditAction
+    let prompt: String?
 }
 
 @MainActor
@@ -103,8 +104,8 @@ class VideoEditViewModel: ObservableObject {
         // No need to call updateEditHistory() on init anymore
     }
     
-    private func addHistoryEntry(title: String) {
-        // Remove any redo entries if we're adding a new action in the middle
+    private func addHistoryEntry(title: String, action: EditAction, prompt: String? = nil) {
+        // If we're not at the end of the history, remove all future entries
         if currentHistoryIndex < editHistory.count - 1 {
             editHistory.removeSubrange((currentHistoryIndex + 1)...)
         }
@@ -120,7 +121,8 @@ class VideoEditViewModel: ObservableObject {
             title: title,
             timestamp: Date(),
             state: newState,
-            action: .addClip(clipId: clips.last?.id ?? 0)
+            action: action,
+            prompt: prompt
         )
         editHistory.append(newEntry)
         currentHistoryIndex = editHistory.count - 1
@@ -236,26 +238,19 @@ class VideoEditViewModel: ObservableObject {
         clips[index] = clip
         
         // Add to history
-        let newState = EditorState(
-            clips: clips,
-            selectedClipIndex: selectedClipIndex
-        )
-        let newEntry = EditHistoryEntry(
+        addHistoryEntry(
             title: "Trim Clip",
-            timestamp: Date(),
-            state: newState,
-            action: .trimClip(clipId: clip.id, startTime: startTime, endTime: endTime)
+            action: .trimClip(
+                clipId: clip.id,
+                startTime: startTime,
+                endTime: endTime
+            )
         )
-        editHistory.append(newEntry)
-        currentHistoryIndex = editHistory.count - 1
 
         // Update player with new composition
         Task {
             await setupPlayerWithComposition()
-            // Seek to start of modified clip
-            if let player = _player {
-                await player.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
-            }
+            await player?.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
         }
     }
     
@@ -499,7 +494,7 @@ class VideoEditViewModel: ObservableObject {
             updatePlayer(with: videoComposition)
             
             // Add to history
-            addHistoryEntry(title: "Add Clip")
+            addHistoryEntry(title: "Add Clip", action: .addClip(clipId: clips.last?.id ?? 0))
             
             // Start pose detection after everything else is set up
             startPoseDetection(for: newClip)
@@ -606,18 +601,10 @@ class VideoEditViewModel: ObservableObject {
         clips[index] = clip
         
         // Add to history
-        let newState = EditorState(
-            clips: clips,
-            selectedClipIndex: selectedClipIndex
-        )
-        let newEntry = EditHistoryEntry(
+        addHistoryEntry(
             title: "Change Volume",
-            timestamp: Date(),
-            state: newState,
             action: .updateVolume(clipId: clip.id, volume: volume)
         )
-        editHistory.append(newEntry)
-        currentHistoryIndex = editHistory.count - 1
         
         updatePlayerVolume()
     }
@@ -632,18 +619,10 @@ class VideoEditViewModel: ObservableObject {
         }
         
         // Add to history
-        let newState = EditorState(
-            clips: clips,
-            selectedClipIndex: selectedClipIndex
-        )
-        let newEntry = EditHistoryEntry(
+        addHistoryEntry(
             title: "Move Clip",
-            timestamp: Date(),
-            state: newState,
             action: .moveClip(from: source.first ?? 0, to: destination)
         )
-        editHistory.append(newEntry)
-        currentHistoryIndex = editHistory.count - 1
         
         // Update player with new clip order
         Task {
@@ -664,18 +643,10 @@ class VideoEditViewModel: ObservableObject {
         }
         
         // Add to history
-        let newState = EditorState(
-            clips: clips,
-            selectedClipIndex: selectedClipIndex
-        )
-        let newEntry = EditHistoryEntry(
+        addHistoryEntry(
             title: "Delete Clip",
-            timestamp: Date(),
-            state: newState,
             action: .deleteClip(index: index)
         )
-        editHistory.append(newEntry)
-        currentHistoryIndex = editHistory.count - 1
 
         // Create new composition with remaining clips
         Task {
@@ -695,7 +666,7 @@ class VideoEditViewModel: ObservableObject {
                     isProcessing = false
                 }
             } catch {
-                print("Error in deleteClip: \(error)")
+                print("Error rebuilding composition after delete: \(error.localizedDescription)")
                 await MainActor.run {
                     isProcessing = false
                 }
@@ -911,18 +882,10 @@ class VideoEditViewModel: ObservableObject {
         }
         
         // Add to history
-        let newState = EditorState(
-            clips: clips,
-            selectedClipIndex: selectedClipIndex
-        )
-        let newEntry = EditHistoryEntry(
+        addHistoryEntry(
             title: "Swap Clips",
-            timestamp: Date(),
-            state: newState,
             action: .swapClips(index: index)
         )
-        editHistory.append(newEntry)
-        currentHistoryIndex = editHistory.count - 1
 
         // Rebuild the composition with the new clip order
         Task {
@@ -1195,18 +1158,10 @@ class VideoEditViewModel: ObservableObject {
             }
 
             // Add to history
-            let newState = EditorState(
-                clips: clips,
-                selectedClipIndex: selectedClipIndex
-            )
-            let newEntry = EditHistoryEntry(
+            addHistoryEntry(
                 title: "Split Clip",
-                timestamp: Date(),
-                state: newState,
                 action: .splitClip(time: time)
             )
-            editHistory.append(newEntry)
-            currentHistoryIndex = editHistory.count - 1
 
             print("Successfully completed splitClip operation")
         } catch {
@@ -1242,18 +1197,10 @@ class VideoEditViewModel: ObservableObject {
         clips[index] = updatedClip
         
         // Add to history
-        let newState = EditorState(
-            clips: clips,
-            selectedClipIndex: selectedClipIndex
-        )
-        let newEntry = EditHistoryEntry(
+        addHistoryEntry(
             title: config == nil ? "Remove Zoom" : "Add Zoom",
-            timestamp: Date(),
-            state: newState,
             action: .updateZoom(clipId: updatedClip.id, config: config)
         )
-        editHistory.append(newEntry)
-        currentHistoryIndex = editHistory.count - 1
 
         // Rebuild the composition to apply the zoom effect
         Task {
@@ -1503,9 +1450,9 @@ class VideoEditViewModel: ObservableObject {
             print("Explanation:", suggestion["explanation"] ?? "No explanation")
             print("Confidence:", suggestion["confidence"] ?? "No confidence score")
             
-            // Apply the suggestion
+            // Apply the suggestion with the original prompt
             do {
-                try await applyAISuggestion(suggestion)
+                try await applyAISuggestion(suggestion, userPrompt: prompt)
                 print("✅ Successfully applied AI suggestion")
             } catch {
                 print("❌ Error applying AI suggestion:", error.localizedDescription)
@@ -1524,7 +1471,7 @@ class VideoEditViewModel: ObservableObject {
     }
 
     // Apply AI suggestion
-    private func applyAISuggestion(_ suggestion: [String: Any]) async throws {
+    private func applyAISuggestion(_ suggestion: [String: Any], userPrompt: String) async throws {
         guard let action = suggestion["action"] as? [String: Any],
               let actionType = action["type"] as? String else {
             throw NSError(domain: "AIEditError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid action format"])
@@ -1536,7 +1483,26 @@ class VideoEditViewModel: ObservableObject {
         case "deleteClip":
             if let index = action["index"] as? Int {
                 await MainActor.run {
+                    // Store current state before modification
+                    let newState = EditorState(
+                        clips: clips,
+                        selectedClipIndex: selectedClipIndex
+                    )
+                    
+                    // Delete the clip
                     deleteClip(at: index)
+                    
+                    // Replace the automatically created history entry with one that includes the prompt
+                    if let lastEntry = editHistory.last {
+                        let newEntry = EditHistoryEntry(
+                            title: lastEntry.title,
+                            timestamp: lastEntry.timestamp,
+                            state: lastEntry.state,
+                            action: lastEntry.action,
+                            prompt: userPrompt
+                        )
+                        editHistory[editHistory.count - 1] = newEntry
+                    }
                 }
             }
             
@@ -1545,6 +1511,17 @@ class VideoEditViewModel: ObservableObject {
                let to = action["to"] as? Int {
                 await MainActor.run {
                     moveClip(from: IndexSet(integer: from), to: to)
+                    // Update the last history entry with the prompt
+                    if let lastEntry = editHistory.last {
+                        let newEntry = EditHistoryEntry(
+                            title: lastEntry.title,
+                            timestamp: lastEntry.timestamp,
+                            state: lastEntry.state,
+                            action: lastEntry.action,
+                            prompt: userPrompt
+                        )
+                        editHistory[editHistory.count - 1] = newEntry
+                    }
                 }
             }
             
@@ -1552,12 +1529,36 @@ class VideoEditViewModel: ObservableObject {
             if let index = action["index"] as? Int {
                 await MainActor.run {
                     swapClips(at: index)
+                    // Update the last history entry with the prompt
+                    if let lastEntry = editHistory.last {
+                        let newEntry = EditHistoryEntry(
+                            title: lastEntry.title,
+                            timestamp: lastEntry.timestamp,
+                            state: lastEntry.state,
+                            action: lastEntry.action,
+                            prompt: userPrompt
+                        )
+                        editHistory[editHistory.count - 1] = newEntry
+                    }
                 }
             }
             
         case "splitClip":
             if let time = action["time"] as? Double {
                 await splitClip(at: time)
+                // Update the last history entry with the prompt
+                await MainActor.run {
+                    if let lastEntry = editHistory.last {
+                        let newEntry = EditHistoryEntry(
+                            title: lastEntry.title,
+                            timestamp: lastEntry.timestamp,
+                            state: lastEntry.state,
+                            action: lastEntry.action,
+                            prompt: userPrompt
+                        )
+                        editHistory[editHistory.count - 1] = newEntry
+                    }
+                }
             }
             
         case "trimClip":
@@ -1575,6 +1576,17 @@ class VideoEditViewModel: ObservableObject {
                 await MainActor.run {
                     selectedClipIndex = index
                     updateClipTrim(startTime: compositionStartTime, endTime: compositionEndTime)
+                    // Update the last history entry with the prompt
+                    if let lastEntry = editHistory.last {
+                        let newEntry = EditHistoryEntry(
+                            title: lastEntry.title,
+                            timestamp: lastEntry.timestamp,
+                            state: lastEntry.state,
+                            action: lastEntry.action,
+                            prompt: userPrompt
+                        )
+                        editHistory[editHistory.count - 1] = newEntry
+                    }
                 }
             }
             
@@ -1586,6 +1598,17 @@ class VideoEditViewModel: ObservableObject {
                 await MainActor.run {
                     selectedClipIndex = index
                     updateClipVolume(volume)
+                    // Update the last history entry with the prompt
+                    if let lastEntry = editHistory.last {
+                        let newEntry = EditHistoryEntry(
+                            title: lastEntry.title,
+                            timestamp: lastEntry.timestamp,
+                            state: lastEntry.state,
+                            action: lastEntry.action,
+                            prompt: userPrompt
+                        )
+                        editHistory[editHistory.count - 1] = newEntry
+                    }
                 }
             }
             
@@ -1606,6 +1629,17 @@ class VideoEditViewModel: ObservableObject {
                 }
                 await MainActor.run {
                     updateZoomConfig(at: index, config: config)
+                    // Update the last history entry with the prompt
+                    if let lastEntry = editHistory.last {
+                        let newEntry = EditHistoryEntry(
+                            title: lastEntry.title,
+                            timestamp: lastEntry.timestamp,
+                            state: lastEntry.state,
+                            action: lastEntry.action,
+                            prompt: userPrompt
+                        )
+                        editHistory[editHistory.count - 1] = newEntry
+                    }
                 }
             }
             
