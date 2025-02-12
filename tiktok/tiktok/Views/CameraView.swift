@@ -141,7 +141,7 @@ class CameraViewModel: NSObject, ObservableObject {
 
     lazy var previewStream: AsyncStream<CGImage> = AsyncStream { [weak self] continuation in
         Task {
-            await self?.frameHandler.setFrameHandler { cgImage in
+            self?.frameHandler.setFrameHandler { cgImage in
                 Task { @MainActor [weak self] in
                     self?.currentFrame = cgImage
                 }

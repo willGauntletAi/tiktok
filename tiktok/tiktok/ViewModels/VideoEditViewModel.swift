@@ -1197,9 +1197,10 @@ class VideoEditViewModel: ObservableObject {
         _player = nil
 
         // Cancel any ongoing pose detection tasks
-        Task { @MainActor in
-            for clip in clips {
-                await poseDetectionService.cancelDetection(for: clip.id)
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            for clip in self.clips {
+                await self.poseDetectionService.cancelDetection(for: clip.id)
             }
         }
 
