@@ -1,4 +1,6 @@
 import * as functions from "firebase-functions";
+import { onCall } from "firebase-functions/v2/https";
+import { defineString } from "firebase-functions/params";
 import { z } from "zod";
 import {
     GoogleGenerativeAI,
@@ -9,9 +11,10 @@ import {
     SchemaType
 } from "@google/generative-ai";
 
+// Define the configuration parameter
+const geminiApiKey = defineString("GEMINI_API_KEY");
+
 // Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
 // Zod schemas for our types
 const ZoomConfigSchema = z.object({
@@ -81,12 +84,7 @@ const EditActionSchema = z.discriminatedUnion("type", [
 const EditSuggestionSchema = z.object({
     action: SuggestedEditActionSchema,
     explanation: z.string(),
-    confidence: z.number().min(0).max(1),
-    impact: z.object({
-        pacing: z.number().min(0).max(1).optional(),
-        engagement: z.number().min(0).max(1).optional(),
-        quality: z.number().min(0).max(1).optional()
-    })
+    confidence: z.number().min(0).max(1)
 });
 
 const EditHistoryEntrySchema = z.object({
@@ -106,10 +104,6 @@ const EditSuggestionRequestSchema = z.object({
 // Only keep the types we actually use
 type EditSuggestionRequest = z.infer<typeof EditSuggestionRequestSchema>;
 type EditSuggestion = z.infer<typeof EditSuggestionSchema>;
-
-interface EditSuggestionResponse {
-    suggestions: EditSuggestion[];
-}
 
 // Safety settings
 const safetySettings: SafetySetting[] = [
@@ -150,45 +144,58 @@ const geminiEditFunction: Tool = {
                         },
                         index: {
                             type: SchemaType.NUMBER,
-                            description: "The index of the clip to modify (for deleteClip, swapClips)"
+                            description: "Required for deleteClip and swapClips: The index of the clip to modify"
                         },
                         from: {
                             type: SchemaType.NUMBER,
-                            description: "Source index for moveClip"
+                            description: "Required for moveClip: Source index"
                         },
                         to: {
                             type: SchemaType.NUMBER,
-                            description: "Destination index for moveClip"
+                            description: "Required for moveClip: Destination index"
                         },
                         time: {
                             type: SchemaType.NUMBER,
-                            description: "Time position for splitClip"
+                            description: "Required for splitClip: Time position to split at"
                         },
                         clipId: {
-                            type: SchemaType.NUMBER,
-                            description: "ID of the clip to modify (for trimClip, updateVolume, updateZoom)"
+                            type: SchemaType.STRING,
+                            description: "Required for trimClip, updateVolume, updateZoom: ID of the clip to modify (string representation of numeric ID)"
                         },
                         startTime: {
                             type: SchemaType.NUMBER,
-                            description: "New start time for trimClip"
+                            description: "Required for trimClip: New start time"
                         },
                         endTime: {
                             type: SchemaType.NUMBER,
-                            description: "New end time for trimClip"
+                            description: "Required for trimClip: New end time"
                         },
                         volume: {
                             type: SchemaType.NUMBER,
-                            description: "New volume level (0-1) for updateVolume"
+                            description: "Required for updateVolume: New volume level (0-1)"
                         },
                         config: {
                             type: SchemaType.OBJECT,
-                            description: "Zoom configuration for updateZoom",
+                            description: "Required for updateZoom: Zoom configuration",
                             properties: {
-                                startZoomIn: { type: SchemaType.NUMBER },
-                                zoomInComplete: { type: SchemaType.NUMBER },
-                                startZoomOut: { type: SchemaType.NUMBER },
-                                zoomOutComplete: { type: SchemaType.NUMBER }
-                            }
+                                startZoomIn: {
+                                    type: SchemaType.NUMBER,
+                                    description: "Required: When to start zooming in"
+                                },
+                                zoomInComplete: {
+                                    type: SchemaType.NUMBER,
+                                    description: "Optional: When zoom in completes"
+                                },
+                                startZoomOut: {
+                                    type: SchemaType.NUMBER,
+                                    description: "Optional: When to start zooming out"
+                                },
+                                zoomOutComplete: {
+                                    type: SchemaType.NUMBER,
+                                    description: "Optional: When zoom out completes"
+                                }
+                            },
+                            required: ["startZoomIn"]
                         }
                     },
                     required: ["type"]
@@ -200,27 +207,9 @@ const geminiEditFunction: Tool = {
                 confidence: {
                     type: SchemaType.NUMBER,
                     description: "Confidence score (0-1) in this suggestion"
-                },
-                impact: {
-                    type: SchemaType.OBJECT,
-                    description: "Expected impact scores for different aspects of the video",
-                    properties: {
-                        pacing: {
-                            type: SchemaType.NUMBER,
-                            description: "Impact on video pacing (0-1)"
-                        },
-                        engagement: {
-                            type: SchemaType.NUMBER,
-                            description: "Impact on viewer engagement (0-1)"
-                        },
-                        quality: {
-                            type: SchemaType.NUMBER,
-                            description: "Impact on overall quality (0-1)"
-                        }
-                    }
                 }
             },
-            required: ["action", "explanation", "confidence", "impact"]
+            required: ["action", "explanation", "confidence"]
         }
     }]
 };
@@ -265,45 +254,120 @@ const generationConfig = {
     maxOutputTokens: 1024,
 };
 
-export const suggestEdits = functions.https.onCall(async (request: functions.https.CallableRequest<EditSuggestionRequest>): Promise<EditSuggestionResponse> => {
-    const data = request.data;
+// Add max retries constant
+const MAX_RETRIES = 3;
 
-    try {
-        // Validate request using Zod schema
-        EditSuggestionRequestSchema.parse(data);
+// Add helper function to generate error feedback prompt
+const generateErrorFeedbackPrompt = (originalPrompt: string, error: Error): string => {
+    return `${originalPrompt}
 
-        // Generate the prompt
-        const prompt = generatePrompt(data);
+PREVIOUS ATTEMPT FAILED WITH ERROR:
+The previous suggestion was invalid because: ${error.message}
 
-        // Get response from Gemini
-        const result = await model.generateContent({
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig,
-            safetySettings,
-            tools: [geminiEditFunction]
-        });
+Please provide a new suggestion that follows the schema requirements exactly. Pay special attention to:
+- Including all required fields for the chosen action type
+- Using the correct data types for all fields
+- Ensuring numeric values are valid
+- Following the schema structure exactly`;
+};
 
-        const response = await result.response;
-        const functionCall = response.candidates?.[0]?.content?.parts?.[0]?.functionCall;
+export const suggestEdits = onCall(
+    {
+        timeoutSeconds: 120,
+        memory: "256MiB"
+    },
+    async (request): Promise<{ suggestions: EditSuggestion[] }> => {
 
-        if (!functionCall || functionCall.name !== "suggestEdit") {
-            throw new Error("No valid edit suggestion received");
+        const genAI = new GoogleGenerativeAI(geminiApiKey.value() || "");
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        const data = request.data;
+
+        try {
+            // Validate request using Zod schema
+            EditSuggestionRequestSchema.parse(data);
+
+            // Generate initial prompt
+            let currentPrompt = generatePrompt(data);
+            let attempts = 0;
+
+            while (attempts < MAX_RETRIES) {
+                try {
+                    console.log(`Attempt ${attempts + 1} of ${MAX_RETRIES}`);
+
+                    // Get response from Gemini
+                    const result = await model.generateContent({
+                        contents: [{ role: "user", parts: [{ text: currentPrompt }] }],
+                        generationConfig,
+                        safetySettings,
+                        tools: [geminiEditFunction]
+                    });
+
+                    const geminiResponse = await result.response;
+                    console.log("Full Gemini response:", JSON.stringify(geminiResponse, null, 2));
+
+                    const functionCall = geminiResponse.candidates?.[0]?.content?.parts?.[0]?.functionCall;
+                    console.log("Function call data:", JSON.stringify(functionCall, null, 2));
+
+                    if (!functionCall || functionCall.name !== "suggestEdit") {
+                        throw new Error("No valid edit suggestion received");
+                    }
+
+                    // Parse and validate the suggestion
+                    console.log("Raw function args:", typeof functionCall.args, functionCall.args);
+                    const suggestion = typeof functionCall.args === "string"
+                        ? JSON.parse(functionCall.args)
+                        : functionCall.args;
+                    console.log("Parsed suggestion:", JSON.stringify(suggestion, null, 2));
+
+                    // Preprocess numeric fields
+                    if (suggestion.action.type === "trimClip") {
+                        suggestion.action.startTime = Number(suggestion.action.startTime);
+                        suggestion.action.endTime = Number(suggestion.action.endTime);
+                    }
+                    if (suggestion.action.type === "updateVolume") {
+                        suggestion.action.volume = Number(suggestion.action.volume);
+                    }
+                    if (suggestion.action.type === "splitClip") {
+                        suggestion.action.time = Number(suggestion.action.time);
+                    }
+                    if (suggestion.confidence) {
+                        suggestion.confidence = Number(suggestion.confidence);
+                    }
+
+                    const validatedSuggestion = EditSuggestionSchema.parse(suggestion);
+
+                    // If we get here, validation succeeded
+                    return {
+                        suggestions: [validatedSuggestion]
+                    };
+
+                } catch (error) {
+                    attempts++;
+                    console.log(`Attempt ${attempts} failed:`, error);
+
+                    // If we've exhausted retries, throw the last error
+                    if (attempts >= MAX_RETRIES) {
+                        throw error;
+                    }
+
+                    // Update prompt with error feedback for next attempt
+                    currentPrompt = generateErrorFeedbackPrompt(
+                        generatePrompt(data),
+                        error instanceof Error ? error : new Error(String(error))
+                    );
+                }
+            }
+
+            // This should never be reached due to the throw in the retry loop
+            throw new Error("Unexpected end of retry loop");
+
+        } catch (error) {
+            console.error("Error generating suggestion:", error);
+            throw new functions.https.HttpsError(
+                "internal",
+                "Error generating edit suggestion",
+                error
+            );
         }
-
-        // Parse and validate the suggestion
-        const suggestion = JSON.parse(functionCall.args.toString());
-        const validatedSuggestion = EditSuggestionSchema.parse(suggestion);
-
-        return {
-            suggestions: [validatedSuggestion]
-        };
-
-    } catch (error) {
-        console.error("Error generating suggestion:", error);
-        throw new functions.https.HttpsError(
-            "internal",
-            "Error generating edit suggestion",
-            error
-        );
     }
-}); 
+); 

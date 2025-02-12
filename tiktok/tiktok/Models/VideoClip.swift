@@ -8,7 +8,7 @@ struct VideoClip: Identifiable {
     var endTime: Double // Position in composition
     var thumbnail: UIImage?
     var volume: Double
-    let assetStartTime: Double // Original time in asset
+    var assetStartTime: Double // Original time in asset
     var assetDuration: Double // Original duration in asset
     var zoomConfig: ZoomConfig?
     var poseDetectionStatus: PoseDetectionStatus = .pending

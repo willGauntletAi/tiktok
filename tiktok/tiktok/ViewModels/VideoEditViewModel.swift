@@ -223,8 +223,16 @@ class VideoEditViewModel: ObservableObject {
               let index = selectedClipIndex
         else { return }
         
+        // Update composition times
         clip.startTime = startTime
         clip.endTime = endTime
+        
+        // Update asset times - calculate relative to original asset
+        let newAssetStartTime = clip.assetStartTime + (startTime - clip.startTime)
+        let newAssetDuration = endTime - startTime
+        clip.assetStartTime = newAssetStartTime
+        clip.assetDuration = newAssetDuration
+        
         clips[index] = clip
         
         // Add to history
@@ -1494,11 +1502,13 @@ class VideoEditViewModel: ObservableObject {
             print("Action:", suggestion["action"] ?? "No action")
             print("Explanation:", suggestion["explanation"] ?? "No explanation")
             print("Confidence:", suggestion["confidence"] ?? "No confidence score")
-            if let impact = suggestion["impact"] as? [String: Double] {
-                print("Impact:")
-                print("- Pacing:", impact["pacing"] ?? 0)
-                print("- Engagement:", impact["engagement"] ?? 0)
-                print("- Quality:", impact["quality"] ?? 0)
+            
+            // Apply the suggestion
+            do {
+                try await applyAISuggestion(suggestion)
+                print("✅ Successfully applied AI suggestion")
+            } catch {
+                print("❌ Error applying AI suggestion:", error.localizedDescription)
             }
             
         } catch {
@@ -1510,6 +1520,97 @@ class VideoEditViewModel: ObservableObject {
                 print("Error code: \(nsError.code)")
                 print("Error user info: \(nsError.userInfo)")
             }
+        }
+    }
+
+    // Apply AI suggestion
+    private func applyAISuggestion(_ suggestion: [String: Any]) async throws {
+        guard let action = suggestion["action"] as? [String: Any],
+              let actionType = action["type"] as? String else {
+            throw NSError(domain: "AIEditError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid action format"])
+        }
+        
+        print("Applying AI suggestion of type: \(actionType)")
+        
+        switch actionType {
+        case "deleteClip":
+            if let index = action["index"] as? Int {
+                await MainActor.run {
+                    deleteClip(at: index)
+                }
+            }
+            
+        case "moveClip":
+            if let from = action["from"] as? Int,
+               let to = action["to"] as? Int {
+                await MainActor.run {
+                    moveClip(from: IndexSet(integer: from), to: to)
+                }
+            }
+            
+        case "swapClips":
+            if let index = action["index"] as? Int {
+                await MainActor.run {
+                    swapClips(at: index)
+                }
+            }
+            
+        case "splitClip":
+            if let time = action["time"] as? Double {
+                await splitClip(at: time)
+            }
+            
+        case "trimClip":
+            if let clipIdStr = action["clipId"] as? String,
+               let clipId = Int(clipIdStr),
+               let startTime = action["startTime"] as? Double,
+               let endTime = action["endTime"] as? Double,
+               let index = clips.firstIndex(where: { $0.id == clipId }) {
+                let clip = clips[index]
+                
+                // Convert asset-relative times to composition times
+                let compositionStartTime = clip.startTime + (startTime - clip.assetStartTime)
+                let compositionEndTime = clip.startTime + (endTime - clip.assetStartTime)
+                
+                await MainActor.run {
+                    selectedClipIndex = index
+                    updateClipTrim(startTime: compositionStartTime, endTime: compositionEndTime)
+                }
+            }
+            
+        case "updateVolume":
+            if let clipIdStr = action["clipId"] as? String,
+               let clipId = Int(clipIdStr),
+               let volume = action["volume"] as? Double,
+               let index = clips.firstIndex(where: { $0.id == clipId }) {
+                await MainActor.run {
+                    selectedClipIndex = index
+                    updateClipVolume(volume)
+                }
+            }
+            
+        case "updateZoom":
+            if let clipIdStr = action["clipId"] as? String,
+               let clipId = Int(clipIdStr),
+               let index = clips.firstIndex(where: { $0.id == clipId }) {
+                let config: ZoomConfig?
+                if let configDict = action["config"] as? [String: Double] {
+                    config = ZoomConfig(
+                        startZoomIn: configDict["startZoomIn"] ?? 0,
+                        zoomInComplete: configDict["zoomInComplete"],
+                        startZoomOut: configDict["startZoomOut"],
+                        zoomOutComplete: configDict["zoomOutComplete"]
+                    )
+                } else {
+                    config = nil
+                }
+                await MainActor.run {
+                    updateZoomConfig(at: index, config: config)
+                }
+            }
+            
+        default:
+            throw NSError(domain: "AIEditError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unsupported action type: \(actionType)"])
         }
     }
 }
