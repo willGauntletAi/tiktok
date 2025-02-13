@@ -134,104 +134,226 @@ const safetySettings: SafetySetting[] = [
     }
 ];
 
-// Function schema for Gemini
-const geminiEditFunction: Tool = {
-    functionDeclarations: [{
-        name: "suggestEdit",
-        description: "Suggest a single, specific edit to improve the video based on the current state and editing history",
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                action: {
-                    type: SchemaType.OBJECT,
-                    description: "The specific edit action to perform",
-                    properties: {
-                        type: {
-                            type: SchemaType.STRING,
-                            enum: ["deleteClip", "moveClip", "swapClips", "splitClip", "trimClip", "updateVolume", "updateZoom"],
-                            description: "The type of edit action to perform"
-                        },
-                        index: {
-                            type: SchemaType.NUMBER,
-                            description: "Required for deleteClip and swapClips: The index of the clip to modify. This is the index of the clip in the currentState.clips array. It is zero-indexed."
-                        },
-                        from: {
-                            type: SchemaType.NUMBER,
-                            description: "Required for moveClip: Source index. This is the index of the clip in the currentState.clips array. It is zero-indexed."
-                        },
-                        to: {
-                            type: SchemaType.NUMBER,
-                            description: "Required for moveClip: Destination index. This is the index of the clip in the currentState.clips array. It is zero-indexed."
-                        },
-                        time: {
-                            type: SchemaType.NUMBER,
-                            description: "Required for splitClip: Time position to split at. This is the time in seconds from the start of the video, not the start of the clip."
-                        },
-                        clipId: {
-                            type: SchemaType.STRING,
-                            description: "Required for trimClip, updateVolume, updateZoom: ID of the clip to modify (string representation of numeric ID)"
-                        },
-                        startTime: {
-                            type: SchemaType.NUMBER,
-                            description: "Required for trimClip: New start time"
-                        },
-                        endTime: {
-                            type: SchemaType.NUMBER,
-                            description: "Required for trimClip: New end time"
-                        },
-                        volume: {
-                            type: SchemaType.NUMBER,
-                            description: "Required for updateVolume: New volume level (0-1)"
-                        },
-                        config: {
-                            type: SchemaType.OBJECT,
-                            description: "Required for updateZoom: Zoom configuration",
-                            properties: {
-                                startZoomIn: {
-                                    type: SchemaType.NUMBER,
-                                    description: "Required: When to start zooming in"
-                                },
-                                zoomInComplete: {
-                                    type: SchemaType.NUMBER,
-                                    description: "Optional: When zoom in completes"
-                                },
-                                startZoomOut: {
-                                    type: SchemaType.NUMBER,
-                                    description: "Optional: When to start zooming out"
-                                },
-                                zoomOutComplete: {
-                                    type: SchemaType.NUMBER,
-                                    description: "Optional: When zoom out completes"
-                                },
-                                focusedJoint: {
-                                    type: SchemaType.STRING,
-                                    description: "Optional: The joint to focus the zoom on (e.g. 'nose', 'leftEye', etc.)",
-                                    enum: [
-                                        "nose", "leftEye", "rightEye", "leftEar", "rightEar",
-                                        "leftShoulder", "rightShoulder", "leftElbow", "rightElbow",
-                                        "leftWrist", "rightWrist", "leftHip", "rightHip",
-                                        "leftKnee", "rightKnee", "leftAnkle", "rightAnkle"
-                                    ]
-                                }
-                            },
-                            required: ["startZoomIn"]
-                        }
+// Function schemas for Gemini
+const geminiEditFunctions: Tool[] = [
+    {
+        functionDeclarations: [{
+            name: "deleteClip",
+            description: "Delete a clip from the video",
+            parameters: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    index: {
+                        type: SchemaType.NUMBER,
+                        description: "The index of the clip to delete. This is the index of the clip in the currentState.clips array. It is zero-indexed."
                     },
-                    required: ["type"]
+                    explanation: {
+                        type: SchemaType.STRING,
+                        description: "A clear explanation of why deleting this clip would improve the video"
+                    },
+                    confidence: {
+                        type: SchemaType.NUMBER,
+                        description: "Confidence score (0-1) in this suggestion"
+                    }
                 },
-                explanation: {
-                    type: SchemaType.STRING,
-                    description: "A clear explanation of why this edit would improve the video"
+                required: ["index", "explanation", "confidence"]
+            }
+        }]
+    },
+    {
+        functionDeclarations: [{
+            name: "moveClip",
+            description: "Move a clip from one position to another",
+            parameters: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    from: {
+                        type: SchemaType.NUMBER,
+                        description: "Source index. This is the index of the clip in the currentState.clips array. It is zero-indexed."
+                    },
+                    to: {
+                        type: SchemaType.NUMBER,
+                        description: "Destination index. This is the index of the clip in the currentState.clips array. It is zero-indexed."
+                    },
+                    explanation: {
+                        type: SchemaType.STRING,
+                        description: "A clear explanation of why moving this clip would improve the video"
+                    },
+                    confidence: {
+                        type: SchemaType.NUMBER,
+                        description: "Confidence score (0-1) in this suggestion"
+                    }
                 },
-                confidence: {
-                    type: SchemaType.NUMBER,
-                    description: "Confidence score (0-1) in this suggestion"
-                }
-            },
-            required: ["action", "explanation", "confidence"]
-        }
-    }]
-};
+                required: ["from", "to", "explanation", "confidence"]
+            }
+        }]
+    },
+    {
+        functionDeclarations: [{
+            name: "swapClips",
+            description: "Swap a clip with the one next to it",
+            parameters: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    index: {
+                        type: SchemaType.NUMBER,
+                        description: "The index of the clip to swap. This is the index of the clip in the currentState.clips array. It is zero-indexed."
+                    },
+                    explanation: {
+                        type: SchemaType.STRING,
+                        description: "A clear explanation of why swapping these clips would improve the video"
+                    },
+                    confidence: {
+                        type: SchemaType.NUMBER,
+                        description: "Confidence score (0-1) in this suggestion"
+                    }
+                },
+                required: ["index", "explanation", "confidence"]
+            }
+        }]
+    },
+    {
+        functionDeclarations: [{
+            name: "splitClip",
+            description: "Split a clip at a specific time point",
+            parameters: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    time: {
+                        type: SchemaType.NUMBER,
+                        description: "Time position to split at. This is the time in seconds from the start of the video, not the start of the clip."
+                    },
+                    explanation: {
+                        type: SchemaType.STRING,
+                        description: "A clear explanation of why splitting the clip at this point would improve the video"
+                    },
+                    confidence: {
+                        type: SchemaType.NUMBER,
+                        description: "Confidence score (0-1) in this suggestion"
+                    }
+                },
+                required: ["time", "explanation", "confidence"]
+            }
+        }]
+    },
+    {
+        functionDeclarations: [{
+            name: "trimClip",
+            description: "Trim a clip by adjusting its start and end times",
+            parameters: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    clipId: {
+                        type: SchemaType.STRING,
+                        description: "ID of the clip to modify (string representation of numeric ID)"
+                    },
+                    startTime: {
+                        type: SchemaType.NUMBER,
+                        description: "New start time"
+                    },
+                    endTime: {
+                        type: SchemaType.NUMBER,
+                        description: "New end time"
+                    },
+                    explanation: {
+                        type: SchemaType.STRING,
+                        description: "A clear explanation of why trimming this clip would improve the video"
+                    },
+                    confidence: {
+                        type: SchemaType.NUMBER,
+                        description: "Confidence score (0-1) in this suggestion"
+                    }
+                },
+                required: ["clipId", "startTime", "endTime", "explanation", "confidence"]
+            }
+        }]
+    },
+    {
+        functionDeclarations: [{
+            name: "updateVolume",
+            description: "Update the volume of a clip",
+            parameters: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    clipId: {
+                        type: SchemaType.STRING,
+                        description: "ID of the clip to modify (string representation of numeric ID)"
+                    },
+                    volume: {
+                        type: SchemaType.NUMBER,
+                        description: "New volume level (0-1)"
+                    },
+                    explanation: {
+                        type: SchemaType.STRING,
+                        description: "A clear explanation of why adjusting the volume would improve the video"
+                    },
+                    confidence: {
+                        type: SchemaType.NUMBER,
+                        description: "Confidence score (0-1) in this suggestion"
+                    }
+                },
+                required: ["clipId", "volume", "explanation", "confidence"]
+            }
+        }]
+    },
+    {
+        functionDeclarations: [{
+            name: "updateZoom",
+            description: "Update the zoom configuration of a clip",
+            parameters: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    clipId: {
+                        type: SchemaType.STRING,
+                        description: "ID of the clip to modify (string representation of numeric ID)"
+                    },
+                    config: {
+                        type: SchemaType.OBJECT,
+                        description: "Zoom configuration",
+                        properties: {
+                            startZoomIn: {
+                                type: SchemaType.NUMBER,
+                                description: "Required: When to start zooming in"
+                            },
+                            zoomInComplete: {
+                                type: SchemaType.NUMBER,
+                                description: "Optional: When zoom in completes"
+                            },
+                            startZoomOut: {
+                                type: SchemaType.NUMBER,
+                                description: "Optional: When to start zooming out"
+                            },
+                            zoomOutComplete: {
+                                type: SchemaType.NUMBER,
+                                description: "Optional: When zoom out completes"
+                            },
+                            focusedJoint: {
+                                type: SchemaType.STRING,
+                                description: "Optional: The joint to focus the zoom on (e.g. 'nose', 'leftEye', etc.)",
+                                enum: [
+                                    "nose", "leftEye", "rightEye", "leftEar", "rightEar",
+                                    "leftShoulder", "rightShoulder", "leftElbow", "rightElbow",
+                                    "leftWrist", "rightWrist", "leftHip", "rightHip",
+                                    "leftKnee", "rightKnee", "leftAnkle", "rightAnkle"
+                                ]
+                            }
+                        },
+                        required: ["startZoomIn"]
+                    },
+                    explanation: {
+                        type: SchemaType.STRING,
+                        description: "A clear explanation of why this zoom configuration would improve the video"
+                    },
+                    confidence: {
+                        type: SchemaType.NUMBER,
+                        description: "Confidence score (0-1) in this suggestion"
+                    }
+                },
+                required: ["clipId", "config", "explanation", "confidence"]
+            }
+        }]
+    }
+];
 
 const generatePrompt = (request: EditSuggestionRequest): string => {
     const { prompt, currentState, editHistory } = request;
@@ -286,18 +408,54 @@ const generationConfig = {
 const MAX_RETRIES = 3;
 
 // Add helper function to generate error feedback prompt
-const generateErrorFeedbackPrompt = (originalPrompt: string, error: Error): string => {
+const generateErrorFeedbackPrompt = (originalPrompt: string, error: Error, functionName?: EditFunctionName): string => {
+    const functionGuidance = functionName ? `
+You attempted to use the "${functionName}" function but it failed. Here are the requirements for this function:
+${geminiEditFunctions.find(f => (f as any).functionDeclarations?.[0]?.name === functionName)
+            ? Object.entries((geminiEditFunctions.find(f => (f as any).functionDeclarations?.[0]?.name === functionName) as any).functionDeclarations[0].parameters.properties)
+                .map(([key, value]) => `- ${key}: ${(value as any).description}`).join("\n")
+            : "Function not found"}`
+        : `
+Available functions:
+${geminiEditFunctions.map(f => `- ${(f as any).functionDeclarations[0].name}: ${(f as any).functionDeclarations[0].description}`).join("\n")}`;
+
     return `${originalPrompt}
 
 PREVIOUS ATTEMPT FAILED WITH ERROR:
 The previous suggestion was invalid because: ${error.message}
 
-Please provide a new suggestion that follows the schema requirements exactly. Pay special attention to:
-- Including all required fields for the chosen action type
-- Using the correct data types for all fields
-- Ensuring numeric values are valid
-- Following the schema structure exactly`;
+${functionGuidance}
+
+Please provide a new suggestion using one of the available functions. Pay special attention to:
+1. Choosing the most appropriate function for your suggestion
+2. Including all required fields for the chosen function
+3. Using the correct data types for all fields
+4. Ensuring numeric values are valid and within bounds
+5. Including a clear explanation and confidence score`;
 };
+
+// Add type for function names
+type EditFunctionName =
+    | "deleteClip"
+    | "moveClip"
+    | "swapClips"
+    | "splitClip"
+    | "trimClip"
+    | "updateVolume"
+    | "updateZoom";
+
+// Add type for raw function responses
+type RawFunctionResponse = {
+    explanation: string;
+    confidence: number;
+} & (
+        | { index: number } // deleteClip, swapClips
+        | { from: number; to: number } // moveClip
+        | { time: number } // splitClip
+        | { clipId: string; startTime: number; endTime: number } // trimClip
+        | { clipId: string; volume: number } // updateVolume
+        | { clipId: string; config: z.infer<typeof ZoomConfigSchema> } // updateZoom
+    );
 
 export const suggestEdits = onCall(
     {
@@ -317,6 +475,7 @@ export const suggestEdits = onCall(
             // Generate initial prompt
             let currentPrompt = generatePrompt(data);
             let attempts = 0;
+            let lastGeminiResponse: any = null;
 
             while (attempts < MAX_RETRIES) {
                 try {
@@ -327,16 +486,17 @@ export const suggestEdits = onCall(
                         contents: [{ role: "user", parts: [{ text: currentPrompt }] }],
                         generationConfig,
                         safetySettings,
-                        tools: [geminiEditFunction]
+                        tools: geminiEditFunctions
                     });
 
                     const geminiResponse = await result.response;
+                    lastGeminiResponse = geminiResponse;
                     console.log("Full Gemini response:", JSON.stringify(geminiResponse, null, 2));
 
                     const functionCall = geminiResponse.candidates?.[0]?.content?.parts?.[0]?.functionCall;
                     console.log("Function call data:", JSON.stringify(functionCall, null, 2));
 
-                    if (!functionCall || functionCall.name !== "suggestEdit") {
+                    if (!functionCall) {
                         throw new Error("No valid edit suggestion received");
                     }
 
@@ -347,22 +507,24 @@ export const suggestEdits = onCall(
                         : functionCall.args;
                     console.log("Parsed suggestion:", JSON.stringify(suggestion, null, 2));
 
-                    // Preprocess numeric fields
-                    if (suggestion.action.type === "trimClip") {
-                        suggestion.action.startTime = Number(suggestion.action.startTime);
-                        suggestion.action.endTime = Number(suggestion.action.endTime);
-                    }
-                    if (suggestion.action.type === "updateVolume") {
-                        suggestion.action.volume = Number(suggestion.action.volume);
-                    }
-                    if (suggestion.action.type === "splitClip") {
-                        suggestion.action.time = Number(suggestion.action.time);
-                    }
-                    if (suggestion.confidence) {
-                        suggestion.confidence = Number(suggestion.confidence);
-                    }
+                    const rawResponse = suggestion as RawFunctionResponse;
+                    const functionName = functionCall.name as EditFunctionName;
 
-                    const validatedSuggestion = EditSuggestionSchema.parse(suggestion);
+                    // Convert the function call to our EditSuggestion format
+                    const editSuggestion: EditSuggestion = {
+                        action: {
+                            type: functionName,
+                            ...Object.fromEntries(
+                                Object.entries(rawResponse).filter(
+                                    ([key]) => !["explanation", "confidence"].includes(key)
+                                )
+                            )
+                        } as any, // Safe to use 'as any' here since we validate with Zod schema right after
+                        explanation: rawResponse.explanation,
+                        confidence: Number(rawResponse.confidence)
+                    };
+
+                    const validatedSuggestion = EditSuggestionSchema.parse(editSuggestion);
 
                     // If we get here, validation succeeded
                     return {
@@ -379,9 +541,11 @@ export const suggestEdits = onCall(
                     }
 
                     // Update prompt with error feedback for next attempt
+                    const lastFunctionCall = lastGeminiResponse?.candidates?.[0]?.content?.parts?.[0]?.functionCall;
                     currentPrompt = generateErrorFeedbackPrompt(
                         generatePrompt(data),
-                        error instanceof Error ? error : new Error(String(error))
+                        error instanceof Error ? error : new Error(String(error)),
+                        lastFunctionCall?.name as EditFunctionName
                     );
                 }
             }
