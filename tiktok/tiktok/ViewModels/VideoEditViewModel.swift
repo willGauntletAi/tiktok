@@ -452,43 +452,74 @@ class VideoEditViewModel: ObservableObject {
                     let centerOffsetX = jointX * naturalSize.width - naturalSize.width / 2
                     let centerOffsetY = (1 - jointY) * naturalSize.height - naturalSize.height / 2
                     
-                    // Move in opposite direction of offset (without scaling)
-                    let tx = -centerOffsetX
-                    let ty = -centerOffsetY
-
+                    // Calculate the maximum allowed translation that would keep the scaled video within bounds
+                    // When scaled, the video is larger than the view by (scale - 1) * size
+                    // The maximum translation should keep the scaled edges within the original bounds
+                    let scaledWidth = naturalSize.width * scale
+                    let scaledHeight = naturalSize.height * scale
+                    
+                    // Calculate the maximum translation that would keep the scaled content within bounds
+                    // This is half the difference between the scaled size and the original size
+                    let maxOffsetX = (scaledWidth - naturalSize.width) / 2
+                    let maxOffsetY = (scaledHeight - naturalSize.height) / 2
+                    
+                    // Calculate the minimum and maximum allowed translations
+                    // These ensure that we don't show empty space on either side
+                    let minTx = -maxOffsetX
+                    let maxTx = maxOffsetX
+                    let minTy = -maxOffsetY
+                    let maxTy = maxOffsetY
+                    
+                    // Clamp the translation to keep the scaled video within bounds
+                    let clampedTx = max(minTx, min(maxTx, -centerOffsetX))
+                    let clampedTy = max(minTy, min(maxTy, -centerOffsetY))
+                    
+                    // Apply scale first, then translation
                     return transform
-                        .concatenating(CGAffineTransform(translationX: tx, y: ty))
                         .concatenating(scaleTransform)
+                        .concatenating(CGAffineTransform(translationX: clampedTx, y: clampedTy))
                 }
                 // If we only have a previous keyframe, use that
                 else if let prevFrame = previousKeyframe,
                         let prevJoint = prevFrame.keypoints.first(where: { $0.type == focusedJoint })
                 {
-                    let tx = -(prevJoint.position.x * naturalSize.width - naturalSize.width / 2) * scale
-                    let ty = -((1 - prevJoint.position.y) * naturalSize.height - naturalSize.height / 2) * scale
+                    let centerOffsetX = prevJoint.position.x * naturalSize.width - naturalSize.width / 2
+                    let centerOffsetY = (1 - prevJoint.position.y) * naturalSize.height - naturalSize.height / 2
+                    
+                    let maxOffsetX = (naturalSize.width * (scale - 1)) / 2
+                    let maxOffsetY = (naturalSize.height * (scale - 1)) / 2
+                    
+                    let clampedTx = max(-maxOffsetX, min(maxOffsetX, -centerOffsetX))
+                    let clampedTy = max(-maxOffsetY, min(maxOffsetY, -centerOffsetY))
 
                     return transform
-                        .concatenating(CGAffineTransform(translationX: tx, y: ty))
                         .concatenating(scaleTransform)
+                        .concatenating(CGAffineTransform(translationX: clampedTx, y: clampedTy))
                 }
                 // If we only have a next keyframe, use that
                 else if let nextFrame = nextKeyframe,
                         let nextJoint = nextFrame.keypoints.first(where: { $0.type == focusedJoint })
                 {
-                    let tx = -(nextJoint.position.x * naturalSize.width - naturalSize.width / 2) * scale
-                    let ty = -((1 - nextJoint.position.y) * naturalSize.height - naturalSize.height / 2) * scale
+                    let centerOffsetX = nextJoint.position.x * naturalSize.width - naturalSize.width / 2
+                    let centerOffsetY = (1 - nextJoint.position.y) * naturalSize.height - naturalSize.height / 2
+                    
+                    let maxOffsetX = (naturalSize.width * (scale - 1)) / 2
+                    let maxOffsetY = (naturalSize.height * (scale - 1)) / 2
+                    
+                    let clampedTx = max(-maxOffsetX, min(maxOffsetX, -centerOffsetX))
+                    let clampedTy = max(-maxOffsetY, min(maxOffsetY, -centerOffsetY))
 
                     return transform
-                        .concatenating(CGAffineTransform(translationX: tx, y: ty))
                         .concatenating(scaleTransform)
+                        .concatenating(CGAffineTransform(translationX: clampedTx, y: clampedTy))
                 }
 
                 // Fallback to center zoom if no valid keyframes
                 let tx = (naturalSize.width * (scale - 1)) / 2
                 let ty = (naturalSize.height * (scale - 1)) / 2
                 return transform
-                    .concatenating(CGAffineTransform(translationX: -tx, y: -ty))
                     .concatenating(scaleTransform)
+                    .concatenating(CGAffineTransform(translationX: -tx, y: -ty))
             }
 
             try await configureJointTrackedZoom(
