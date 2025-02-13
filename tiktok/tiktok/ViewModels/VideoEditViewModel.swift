@@ -1587,7 +1587,7 @@ class VideoEditViewModel: ObservableObject {
                 let sets = setDetectionService.detectSets(from: results)
                 print("💪 Set detection completed. Found \(sets.count) sets:")
                 for (index, set) in sets.enumerated() {
-                    print("  Set \(index + 1): \(set.reps) reps, from \(String(format: "%.2f", set.startTime))s to \(String(format: "%.2f", set.endTime))s")
+                    print("  Set \(index + 1): \(set.reps) reps, using \(set.keyJoint) from \(String(format: "%.2f", set.startTime))s to \(String(format: "%.2f", set.endTime))s")
                 }
 
                 await MainActor.run {
