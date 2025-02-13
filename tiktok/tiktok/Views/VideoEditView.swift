@@ -563,27 +563,32 @@ struct VideoEditView: View {
                 }
 
                 // Custom tab bar at the bottom
-                HStack(spacing: 0) {
-                    Spacer()
-                    Button(action: { selectedTab = 0 }) {
-                        VStack {
-                            Image(systemName: "film")
-                            Text("Timeline")
+                VStack(spacing: 0) {
+                    Divider()
+                    HStack(spacing: 0) {
+                        Spacer()
+                        Button(action: { selectedTab = 0 }) {
+                            VStack {
+                                Image(systemName: "film")
+                                Text("Timeline")
+                            }
+                            .foregroundColor(selectedTab == 0 ? .blue : .gray)
                         }
-                        .foregroundColor(selectedTab == 0 ? .blue : .gray)
-                    }
-                    Spacer()
-                    Button(action: { selectedTab = 1 }) {
-                        VStack {
-                            Image(systemName: "clock.arrow.circlepath")
-                            Text("History")
+                        Spacer()
+                        Button(action: { selectedTab = 1 }) {
+                            VStack {
+                                Image(systemName: "clock.arrow.circlepath")
+                                Text("History")
+                            }
+                            .foregroundColor(selectedTab == 1 ? .blue : .gray)
                         }
-                        .foregroundColor(selectedTab == 1 ? .blue : .gray)
+                        Spacer()
                     }
-                    Spacer()
+                    .padding(.vertical, 8)
                 }
-                .padding(.vertical, 8)
-                .background(Color(.systemBackground).shadow(radius: 2, y: -2))
+                .background(Color(.systemBackground))
+                .shadow(radius: 2, y: -2)
+                .ignoresSafeArea(.all, edges: .bottom)
             }
             .navigationTitle("Edit Video")
             .navigationBarTitleDisplayMode(.inline)
