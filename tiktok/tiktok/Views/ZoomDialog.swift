@@ -6,6 +6,7 @@ struct ZoomDialog: View {
     @State private var zoomInComplete: Double?
     @State private var startZoomOut: Double?
     @State private var zoomOutComplete: Double?
+    @State private var focusedJoint: KeypointType?
     let clipDuration: Double
     let existingConfig: ZoomConfig?
     let onSave: (ZoomConfig) -> Void
@@ -18,11 +19,21 @@ struct ZoomDialog: View {
         _zoomInComplete = State(initialValue: existingConfig?.zoomInComplete)
         _startZoomOut = State(initialValue: existingConfig?.startZoomOut)
         _zoomOutComplete = State(initialValue: existingConfig?.zoomOutComplete)
+        _focusedJoint = State(initialValue: existingConfig?.focusedJoint)
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                Section(header: Text("Focus")) {
+                    Picker("Focus Joint", selection: $focusedJoint) {
+                        Text("None").tag(KeypointType?.none)
+                        ForEach(KeypointType.allCases, id: \.self) { joint in
+                            Text(joint.displayName).tag(Optional(joint))
+                        }
+                    }
+                }
+
                 Section(header: Text("Zoom In")) {
                     HStack {
                         Text("Start")
@@ -117,7 +128,8 @@ struct ZoomDialog: View {
                             startZoomIn: startZoomIn,
                             zoomInComplete: zoomInComplete,
                             startZoomOut: startZoomOut,
-                            zoomOutComplete: zoomOutComplete
+                            zoomOutComplete: zoomOutComplete,
+                            focusedJoint: focusedJoint
                         )
                         onSave(config)
                         dismiss()

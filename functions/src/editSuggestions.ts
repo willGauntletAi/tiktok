@@ -21,7 +21,8 @@ const ZoomConfigSchema = z.object({
     startZoomIn: z.number(),
     zoomInComplete: z.number().optional(),
     startZoomOut: z.number().optional(),
-    zoomOutComplete: z.number().optional()
+    zoomOutComplete: z.number().optional(),
+    focusedJoint: z.string().optional()
 });
 
 const DetectedSetSchema = z.object({
@@ -201,6 +202,16 @@ const geminiEditFunction: Tool = {
                                 zoomOutComplete: {
                                     type: SchemaType.NUMBER,
                                     description: "Optional: When zoom out completes"
+                                },
+                                focusedJoint: {
+                                    type: SchemaType.STRING,
+                                    description: "Optional: The joint to focus the zoom on (e.g. 'nose', 'leftEye', etc.)",
+                                    enum: [
+                                        "nose", "leftEye", "rightEye", "leftEar", "rightEar",
+                                        "leftShoulder", "rightShoulder", "leftElbow", "rightElbow",
+                                        "leftWrist", "rightWrist", "leftHip", "rightHip",
+                                        "leftKnee", "rightKnee", "leftAnkle", "rightAnkle"
+                                    ]
                                 }
                             },
                             required: ["startZoomIn"]

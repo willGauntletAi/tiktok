@@ -345,7 +345,7 @@ struct HistoryEntryView: View {
     let currentHistoryIndex: Int
     let onUndo: (Int) async -> Void
     let onRedo: (Int) async -> Void
-    
+
     var body: some View {
         Button(action: {
             Task {
@@ -373,9 +373,9 @@ struct HistoryEntryView: View {
                         .font(.caption)
                         .foregroundColor(.gray)
                 }
-                
+
                 Spacer()
-                
+
                 Image(systemName: index <= currentHistoryIndex ? "arrow.uturn.backward" : "arrow.uturn.forward")
                     .foregroundColor(.blue)
             }
@@ -390,7 +390,7 @@ struct EditHistoryView: View {
     @ObservedObject var viewModel: VideoEditViewModel
     @State private var prompt: String = ""
     @State private var isSubmitting = false
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Prompt input section
@@ -398,11 +398,11 @@ struct EditHistoryView: View {
                 TextField("Enter your editing suggestion...", text: $prompt)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding(.horizontal)
-                
+
                 Button(action: {
                     guard !prompt.isEmpty else { return }
                     isSubmitting = true
-                    
+
                     Task {
                         await viewModel.requestAIEditSuggestion(prompt: prompt)
                         prompt = "" // Clear the prompt after submission
@@ -425,9 +425,9 @@ struct EditHistoryView: View {
             }
             .padding(.vertical)
             .background(Color(.systemBackground))
-            
+
             Divider()
-            
+
             // History list
             if viewModel.editHistory.isEmpty {
                 EmptyHistoryView()
@@ -445,7 +445,7 @@ struct EditHistoryView: View {
                                 await viewModel.redo(to: targetIndex)
                             }
                         )
-                        
+
                         if index > 0 {
                             Divider()
                         }
@@ -466,9 +466,9 @@ struct VideoEditView: View {
     @State private var showSongGeneration = false
     @State private var selectedTab = 0
     @Environment(\.dismiss) private var dismiss
-    
+
     var onVideoEdited: ((URL) -> Void)?
-    
+
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
@@ -674,7 +674,7 @@ extension UIDevice {
 }
 
 extension UIWindow {
-    open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
+    override open func motionEnded(_ motion: UIEvent.EventSubtype, with _: UIEvent?) {
         if motion == .motionShake {
             NotificationCenter.default.post(name: UIDevice.deviceDidShakeNotification, object: nil)
         }
@@ -696,7 +696,7 @@ struct DeviceShakeViewModifier: ViewModifier {
 
 extension View {
     func onShake(perform action: @escaping () -> Void) -> some View {
-        self.modifier(DeviceShakeViewModifier(action: action))
+        modifier(DeviceShakeViewModifier(action: action))
     }
 }
 

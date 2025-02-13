@@ -15,24 +15,24 @@ struct WorkoutCompletionData: Sendable {
     let exerciseCompletions: [String]
     let startedAt: Date
     let notes: String
-    
+
     var asDictionary: [String: Any] {
         [
             "workoutId": workoutId,
             "userId": userId,
             "exerciseCompletions": exerciseCompletions,
             "startedAt": Timestamp(date: startedAt),
-            "notes": notes
+            "notes": notes,
         ]
     }
 }
 
 struct WorkoutCompletionUpdateData: Sendable {
     let finishedAt: Date
-    
+
     var asDictionary: [String: Any] {
         [
-            "finishedAt": Timestamp(date: finishedAt)
+            "finishedAt": Timestamp(date: finishedAt),
         ]
     }
 }

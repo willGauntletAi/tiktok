@@ -39,7 +39,7 @@ struct VideoClip: Identifiable {
 final class AtomicIntGenerator {
     private var current = 0
     private let queue = DispatchQueue(label: "com.tiktok.idgenerator")
-    
+
     func next() -> Int {
         queue.sync {
             current += 1
@@ -53,12 +53,14 @@ struct ZoomConfig: Codable {
     var zoomInComplete: Double? // Optional - when zoom in completes
     var startZoomOut: Double? // Optional - when to start zooming out
     var zoomOutComplete: Double? // Optional - when zoom out completes
+    var focusedJoint: KeypointType? // Optional - the joint to focus the zoom on
 
-    init(startZoomIn: Double, zoomInComplete: Double? = nil, startZoomOut: Double? = nil, zoomOutComplete: Double? = nil) {
+    init(startZoomIn: Double, zoomInComplete: Double? = nil, startZoomOut: Double? = nil, zoomOutComplete: Double? = nil, focusedJoint: KeypointType? = nil) {
         self.startZoomIn = startZoomIn
         self.zoomInComplete = zoomInComplete
         self.startZoomOut = startZoomOut
         self.zoomOutComplete = zoomOutComplete
+        self.focusedJoint = focusedJoint
     }
 }
 
@@ -93,7 +95,7 @@ struct PoseKeypoint: Codable {
     let type: KeypointType
 }
 
-enum KeypointType: String, Codable {
+enum KeypointType: String, Codable, CaseIterable {
     case nose
     case leftEye
     case rightEye
@@ -111,4 +113,26 @@ enum KeypointType: String, Codable {
     case rightKnee
     case leftAnkle
     case rightAnkle
+
+    var displayName: String {
+        switch self {
+        case .nose: return "Nose"
+        case .leftEye: return "Left Eye"
+        case .rightEye: return "Right Eye"
+        case .leftEar: return "Left Ear"
+        case .rightEar: return "Right Ear"
+        case .leftShoulder: return "Left Shoulder"
+        case .rightShoulder: return "Right Shoulder"
+        case .leftElbow: return "Left Elbow"
+        case .rightElbow: return "Right Elbow"
+        case .leftWrist: return "Left Wrist"
+        case .rightWrist: return "Right Wrist"
+        case .leftHip: return "Left Hip"
+        case .rightHip: return "Right Hip"
+        case .leftKnee: return "Left Knee"
+        case .rightKnee: return "Right Knee"
+        case .leftAnkle: return "Left Ankle"
+        case .rightAnkle: return "Right Ankle"
+        }
+    }
 }

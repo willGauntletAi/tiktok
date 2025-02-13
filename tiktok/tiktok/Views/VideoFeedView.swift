@@ -306,21 +306,21 @@ struct VideoFeedView: View {
 
     private func loadMoreVideos() async {
         guard !isLoading else { return }
-        
+
         isLoading = true
         defer { isLoading = false }
-        
+
         print("🎬 Getting recommendations based on: \(videos.last?.map { $0.id } ?? [])")
-        
+
         do {
             let recommendations = try await recommendationService.getRecommendations(
                 forVideos: videos.last?.map { $0.id } ?? []
             )
-            
+
             // Process each recommendation
             let db = Firestore.firestore()
             var newVideoLists: [[any VideoContent]] = []
-            
+
             for recommendation in recommendations {
                 do {
                     let doc = try await db.collection("videos").document(recommendation.videoId).getDocument()
@@ -332,7 +332,7 @@ struct VideoFeedView: View {
                     print("❌ Error processing video recommendation: \(error)")
                 }
             }
-            
+
             await MainActor.run {
                 if !newVideoLists.isEmpty {
                     videos.append(contentsOf: newVideoLists)

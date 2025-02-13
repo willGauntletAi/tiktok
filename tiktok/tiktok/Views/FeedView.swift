@@ -1,6 +1,6 @@
-import SwiftUI
 import AVKit
 import FirebaseFirestore
+import SwiftUI
 
 struct FeedView: View {
     @State private var currentIndex: Int?
@@ -67,23 +67,23 @@ struct FeedView: View {
 
     private func loadMoreVideos() async {
         guard !isLoading else { return }
-        
+
         isLoading = true
         defer { isLoading = false }
-        
+
         do {
             let recommendations = try await recommendationService.getRecommendations(
                 forVideos: videos.map { $0.id }
             )
-            
+
             let db = Firestore.firestore()
             var newVideos: [any VideoContent] = []
-            
+
             for recommendation in recommendations {
                 do {
                     let doc = try await db.collection("videos").document(recommendation.videoId).getDocument()
                     guard let data = doc.data() else { continue }
-                    
+
                     let type = data["type"] as? String ?? ""
                     switch type {
                     case "exercise":
@@ -102,7 +102,7 @@ struct FeedView: View {
                             updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
                         )
                         newVideos.append(exercise)
-                        
+
                     case "workout":
                         let workout = Workout(
                             id: doc.documentID,
@@ -119,7 +119,7 @@ struct FeedView: View {
                             updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
                         )
                         newVideos.append(workout)
-                        
+
                     case "workoutPlan":
                         let workoutPlan = WorkoutPlan(
                             id: doc.documentID,
@@ -136,7 +136,7 @@ struct FeedView: View {
                             updatedAt: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
                         )
                         newVideos.append(workoutPlan)
-                        
+
                     default:
                         print("❌ Unknown video type: \(type)")
                     }
@@ -144,7 +144,7 @@ struct FeedView: View {
                     print("❌ Error processing video recommendation: \(error)")
                 }
             }
-            
+
             await MainActor.run {
                 if !newVideos.isEmpty {
                     videos.append(contentsOf: newVideos)
