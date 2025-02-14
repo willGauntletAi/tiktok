@@ -99,6 +99,8 @@ class VideoEditViewModel: ObservableObject {
     @Published private(set) var editHistory: [EditHistoryEntry] = []
     @Published private(set) var currentHistoryIndex: Int = -1
 
+    @Published var shouldWaitForPoseDetection: Bool?
+
     // Initialize without UndoManager
     init() {
         // No need to call updateEditHistory() on init anymore
@@ -830,7 +832,7 @@ class VideoEditViewModel: ObservableObject {
             addHistoryEntry(title: "Add Clip", action: .addClip(clipId: clips.last?.id ?? 0))
 
             // Start pose detection after everything else is set up
-            startPoseDetection(for: newClip)
+            try await startPoseDetection(for: newClip)
 
             // Clean up the original temporary file if needed
             if url.path.contains("/tmp/") {
@@ -1269,16 +1271,26 @@ class VideoEditViewModel: ObservableObject {
     }
 
     func splitClip(at time: Double) async {
-        print("🔄 Splitting clip at absolute time: \(time)")
+        print("Splitting clip at time: \(time)")
         
-        // Find which clip contains this time by accumulating durations
-        var accumulatedTime = 0.0
+        await MainActor.run {
+            isProcessing = true
+        }
+        
+        defer {
+            Task { @MainActor in
+                isProcessing = false
+            }
+        }
+        
+        // Find the clip that contains the given time
         var targetIndex: Int?
-        var relativeTime: Double = 0.0
+        var relativeTime: Double = 0
+        var accumulatedTime: Double = 0
         
         for (index, clip) in clips.enumerated() {
             let clipDuration = clip.endTime - clip.startTime
-            if time > accumulatedTime && time < accumulatedTime + clipDuration {
+            if time >= accumulatedTime && time < accumulatedTime + clipDuration {
                 targetIndex = index
                 relativeTime = time - accumulatedTime
                 break
@@ -1297,126 +1309,107 @@ class VideoEditViewModel: ObservableObject {
         print("  Relative split time: \(relativeTime)")
         
         do {
-            // Create a new composition for the split operation
-            let splitComposition = AVMutableComposition()
+            // Cancel any ongoing pose detection for this clip
+            await poseDetectionService.cancelDetection(for: clip.id)
             
-            // Get the video track from the original asset
-            guard let videoTrack = try await clip.asset.loadTracks(withMediaType: .video).first else {
-                print("❌ No video track found")
-                return
-            }
-            
-            // Create two video tracks in the new composition
-            let firstVideoTrack = splitComposition.addMutableTrack(
-                withMediaType: .video,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            )
-            
-            let secondVideoTrack = splitComposition.addMutableTrack(
-                withMediaType: .video,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            )
-            
-            // Calculate time ranges for the split
-            let splitPoint = CMTime(seconds: relativeTime, preferredTimescale: 600)
-            let firstRange = CMTimeRange(
-                start: CMTime(seconds: clip.assetStartTime, preferredTimescale: 600),
-                end: CMTime(seconds: clip.assetStartTime + relativeTime, preferredTimescale: 600)
-            )
-            let secondRange = CMTimeRange(
-                start: CMTime(seconds: clip.assetStartTime + relativeTime, preferredTimescale: 600),
-                end: CMTime(seconds: clip.assetStartTime + clip.assetDuration, preferredTimescale: 600)
-            )
-            
-            // Insert the video segments
-            try firstVideoTrack?.insertTimeRange(firstRange, of: videoTrack, at: .zero)
-            try secondVideoTrack?.insertTimeRange(secondRange, of: videoTrack, at: .zero)
-            
-            // Handle audio tracks if they exist
-            if let audioTrack = try await clip.asset.loadTracks(withMediaType: .audio).first {
-                let firstAudioTrack = splitComposition.addMutableTrack(
-                    withMediaType: .audio,
-                    preferredTrackID: kCMPersistentTrackID_Invalid
+            // Create thumbnails and prepare clips in a background task
+            let (firstClip, secondClip) = try await Task.detached(priority: .userInitiated) { [clip] in
+                // Create a new composition for the split operation
+                let splitComposition = AVMutableComposition()
+                
+                // Get the video track from the original asset
+                guard let videoTrack = try await clip.asset.loadTracks(withMediaType: .video).first else {
+                    throw VideoError.noVideoTrack
+                }
+                
+                // Generate thumbnails for both parts
+                let imageGenerator = AVAssetImageGenerator(asset: clip.asset)
+                imageGenerator.appliesPreferredTrackTransform = true
+                imageGenerator.maximumSize = CGSize(width: 200, height: 200)
+                
+                let firstThumbnailTime = CMTime(seconds: clip.assetStartTime + 0.03, preferredTimescale: 600)
+                let secondThumbnailTime = CMTime(seconds: clip.assetStartTime + relativeTime + 0.03, preferredTimescale: 600)
+                
+                async let firstImageTask = imageGenerator.image(at: firstThumbnailTime)
+                async let secondImageTask = imageGenerator.image(at: secondThumbnailTime)
+                
+                let (firstImage, secondImage) = try await (firstImageTask, secondImageTask)
+                
+                // Create the two new clips
+                var firstClip = VideoClip(
+                    asset: clip.asset,
+                    startTime: clip.startTime,
+                    endTime: clip.startTime + relativeTime,
+                    thumbnail: UIImage(cgImage: firstImage.image),
+                    assetStartTime: clip.assetStartTime,
+                    assetDuration: relativeTime
                 )
                 
-                let secondAudioTrack = splitComposition.addMutableTrack(
-                    withMediaType: .audio,
-                    preferredTrackID: kCMPersistentTrackID_Invalid
+                var secondClip = VideoClip(
+                    asset: clip.asset,
+                    startTime: clip.startTime + relativeTime,
+                    endTime: clip.endTime,
+                    thumbnail: UIImage(cgImage: secondImage.image),
+                    assetStartTime: clip.assetStartTime + relativeTime,
+                    assetDuration: clip.assetDuration - relativeTime
                 )
                 
-                try firstAudioTrack?.insertTimeRange(firstRange, of: audioTrack, at: .zero)
-                try secondAudioTrack?.insertTimeRange(secondRange, of: audioTrack, at: .zero)
-            }
-            
-            // Generate thumbnails for both parts
-            let imageGenerator = AVAssetImageGenerator(asset: clip.asset)
-            imageGenerator.appliesPreferredTrackTransform = true
-            imageGenerator.maximumSize = CGSize(width: 200, height: 200)
-            
-            let firstThumbnailTime = CMTime(seconds: clip.assetStartTime + 0.03, preferredTimescale: 600)
-            let secondThumbnailTime = CMTime(seconds: clip.assetStartTime + relativeTime + 0.03, preferredTimescale: 600)
-            
-            let firstImage = try await imageGenerator.image(at: firstThumbnailTime)
-            let secondImage = try await imageGenerator.image(at: secondThumbnailTime)
-            
-            // Create the two new clips
-            var firstClip = VideoClip(
-                asset: clip.asset,
-                startTime: clip.startTime,
-                endTime: clip.startTime + relativeTime,
-                thumbnail: UIImage(cgImage: firstImage.image),
-                assetStartTime: clip.assetStartTime,
-                assetDuration: relativeTime
-            )
-            
-            var secondClip = VideoClip(
-                asset: clip.asset,
-                startTime: clip.startTime + relativeTime,
-                endTime: clip.endTime,
-                thumbnail: UIImage(cgImage: secondImage.image),
-                assetStartTime: clip.assetStartTime + relativeTime,
-                assetDuration: clip.assetDuration - relativeTime
-            )
-            
-            // Copy over pose detection results and split them between the clips
-            if let poseResults = clip.poseResults {
-                firstClip.poseResults = poseResults.filter { result in
-                    let relativeTime = result.timestamp - firstClip.assetStartTime
-                    return relativeTime >= 0 && relativeTime <= firstClip.assetDuration
+                // Handle pose detection results based on original clip's status
+                switch clip.poseDetectionStatus {
+                case .completed:
+                    if let poseResults = clip.poseResults {
+                        let firstClipResults = poseResults.filter { result in
+                            let relativeTime = result.timestamp - firstClip.assetStartTime
+                            return relativeTime >= 0 && relativeTime <= firstClip.assetDuration
+                        }
+                        
+                        let secondClipResults = poseResults.filter { result in
+                            let relativeTime = result.timestamp - secondClip.assetStartTime
+                            return relativeTime >= 0 && relativeTime <= secondClip.assetDuration
+                        }
+                        
+                        firstClip.poseResults = firstClipResults
+                        secondClip.poseResults = secondClipResults
+                        
+                        // Run set detection in parallel for both clips
+                        async let firstClipSetsTask = Task.detached { [setDetectionService = self.setDetectionService] in
+                            setDetectionService.detectSets(from: firstClipResults)
+                        }.value
+                        
+                        async let secondClipSetsTask = Task.detached { [setDetectionService = self.setDetectionService] in
+                            setDetectionService.detectSets(from: secondClipResults)
+                        }.value
+                        
+                        let (firstClipSets, secondClipSets) = try await (firstClipSetsTask, secondClipSetsTask)
+                        
+                        firstClip.detectedSets = firstClipSets
+                        secondClip.detectedSets = secondClipSets
+                        
+                        print("💪 First clip sets: Found \(firstClipSets.count) sets")
+                        print("💪 Second clip sets: Found \(secondClipSets.count) sets")
+                    }
+                    
+                    firstClip.poseDetectionStatus = .completed
+                    secondClip.poseDetectionStatus = .completed
+                    
+                case .failed(let error):
+                    firstClip.poseDetectionStatus = .failed(error)
+                    secondClip.poseDetectionStatus = .failed(error)
+                    
+                case .pending, .inProgress:
+                    firstClip.poseDetectionStatus = .pending
+                    secondClip.poseDetectionStatus = .pending
                 }
                 
-                secondClip.poseResults = poseResults.filter { result in
-                    let relativeTime = result.timestamp - secondClip.assetStartTime
-                    return relativeTime >= 0 && relativeTime <= secondClip.assetDuration
-                }
-            }
+                return (firstClip, secondClip)
+            }.value
             
-            // Copy over detected sets and split them between the clips
-            if let detectedSets = clip.detectedSets {
-                firstClip.detectedSets = detectedSets.filter { set in
-                    let relativeStartTime = set.startTime - firstClip.assetStartTime
-                    let relativeEndTime = set.endTime - firstClip.assetStartTime
-                    return relativeStartTime >= 0 && relativeEndTime <= firstClip.assetDuration
-                }
-                
-                secondClip.detectedSets = detectedSets.filter { set in
-                    let relativeStartTime = set.startTime - secondClip.assetStartTime
-                    let relativeEndTime = set.endTime - secondClip.assetStartTime
-                    return relativeStartTime >= 0 && relativeEndTime <= secondClip.assetDuration
-                }
-            }
-            
-            // Set pose detection status for both clips
-            firstClip.poseDetectionStatus = clip.poseDetectionStatus
-            secondClip.poseDetectionStatus = clip.poseDetectionStatus
-            
-            // Update the clips array
+            // Update the clips array on the main actor
             await MainActor.run {
                 clips.remove(at: index)
                 clips.insert(secondClip, at: index)
                 clips.insert(firstClip, at: index)
                 
-                // Add to history
                 addHistoryEntry(
                     title: "Split Clip",
                     action: .splitClip(time: time)
@@ -1425,6 +1418,14 @@ class VideoEditViewModel: ObservableObject {
             
             // Rebuild the composition
             await setupPlayerWithComposition()
+            
+            // Start pose detection for new clips if needed
+            if case .pending = firstClip.poseDetectionStatus {
+                try await startPoseDetection(for: firstClip)
+            }
+            if case .pending = secondClip.poseDetectionStatus {
+                try await startPoseDetection(for: secondClip)
+            }
             
         } catch {
             print("❌ Error splitting clip: \(error.localizedDescription)")
@@ -1464,19 +1465,35 @@ class VideoEditViewModel: ObservableObject {
         }
     }
 
-    private func startPoseDetection(for clip: VideoClip) {
-        Task {
+    private func startPoseDetection(for clip: VideoClip) async {
+        let maxRetries = 3
+        var currentRetry = 0
+        var lastError: Error?
+
+        while currentRetry < maxRetries {
             do {
+                if currentRetry > 0 {
+                    // Exponential backoff: wait longer between each retry
+                    let backoffSeconds = Double(pow(2.0, Double(currentRetry - 1)))
+                    print("🔄 Retry attempt \(currentRetry)/\(maxRetries) for clip \(clip.id). Waiting \(String(format: "%.1f", backoffSeconds))s...")
+                    try await Task.sleep(for: .seconds(backoffSeconds))
+                }
+
                 print("🏃‍♂️ Starting pose detection for clip: \(clip.id)")
                 var updatedClip = clip
                 updatedClip.poseDetectionStatus = .inProgress
-                updateClip(updatedClip)
+                await MainActor.run {
+                    updateClip(updatedClip)
+                }
 
                 let results = try await poseDetectionService.detectPoses(for: clip)
                 print("✅ Pose detection completed. Found \(results.count) pose frames")
 
-                // Detect sets from pose results
-                let sets = setDetectionService.detectSets(from: results)
+                // Detect sets from pose results in a background task to avoid blocking
+                let sets = await Task.detached(priority: .userInitiated) { [setDetectionService] in
+                    return setDetectionService.detectSets(from: results)
+                }.value
+                
                 print("💪 Set detection completed. Found \(sets.count) sets:")
                 for (index, set) in sets.enumerated() {
                     print("  Set \(index + 1): \(set.reps) reps, from \(String(format: "%.2f", set.startTime))s to \(String(format: "%.2f", set.endTime))s")
@@ -1484,18 +1501,29 @@ class VideoEditViewModel: ObservableObject {
 
                 await MainActor.run {
                     detectedSets = sets
+                    updatedClip.poseResults = results
+                    updatedClip.detectedSets = sets
+                    updatedClip.poseDetectionStatus = .completed
+                    updateClip(updatedClip)
                 }
-
-                updatedClip.poseResults = results
-                updatedClip.detectedSets = sets
-                updatedClip.poseDetectionStatus = .completed
-                updateClip(updatedClip)
                 print("🎬 Finished processing clip: \(clip.id)")
+                
+                // Success - break out of retry loop
+                break
             } catch {
-                print("❌ Error during pose/set detection: \(error)")
-                var updatedClip = clip
-                updatedClip.poseDetectionStatus = .failed(error)
-                updateClip(updatedClip)
+                lastError = error
+                currentRetry += 1
+                
+                if currentRetry >= maxRetries {
+                    print("❌ Error during pose/set detection after \(maxRetries) attempts: \(error)")
+                    await MainActor.run {
+                        var updatedClip = clip
+                        updatedClip.poseDetectionStatus = .failed(error)
+                        updateClip(updatedClip)
+                    }
+                } else {
+                    print("⚠️ Pose detection attempt \(currentRetry) failed: \(error). Will retry...")
+                }
             }
         }
     }
@@ -1531,6 +1559,35 @@ class VideoEditViewModel: ObservableObject {
     }
 
     func requestAIEditSuggestion(prompt: String) async {
+        // Reset the wait flag
+        shouldWaitForPoseDetection = nil
+        
+        // Check if any clips have pending or in-progress pose detection
+        let hasIncompleteDetection = clips.contains { clip in
+            clip.poseDetectionStatus == .pending || clip.poseDetectionStatus == .inProgress
+        }
+        
+        if hasIncompleteDetection {
+            // Set the flag and wait for user decision
+            shouldWaitForPoseDetection = nil
+            
+            // Wait for user to make a choice
+            while shouldWaitForPoseDetection == nil {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            
+            // If user chose not to wait, proceed without pose detection data
+            if !shouldWaitForPoseDetection! {
+                await processAIRequest(prompt: prompt, waitForPoseDetection: false)
+                return
+            }
+        }
+        
+        // Either no incomplete detection or user chose to wait
+        await processAIRequest(prompt: prompt, waitForPoseDetection: true)
+    }
+    
+    private func processAIRequest(prompt: String, waitForPoseDetection: Bool) async {
         await MainActor.run {
             isProcessing = true
         }
@@ -1546,20 +1603,37 @@ class VideoEditViewModel: ObservableObject {
             print("================================")
             print("📝 User Prompt:", prompt)
 
-            // Wait for all pose detection to complete
-            print("\n⏳ Waiting for Pose Detection")
-            print("----------------------------")
-            for (index, clip) in clips.enumerated() {
-                while clip.poseDetectionStatus == .pending || clip.poseDetectionStatus == .inProgress {
-                    try await Task.sleep(nanoseconds: 100_000_000) // 100ms
-                    print("  ⌛️ Clip \(index) (ID: \(clip.id)): Still processing...")
+            if waitForPoseDetection {
+                // Create async tasks for all pending pose detections
+                print("\n⏳ Waiting for Pose Detection")
+                print("----------------------------")
+                
+                let detectionTasks = clips.enumerated().map { index, clip in
+                    Task {
+                        while clip.poseDetectionStatus == .pending || clip.poseDetectionStatus == .inProgress {
+                            try await Task.sleep(for: .milliseconds(100))
+                            print("  ⌛️ Clip \(index) (ID: \(clip.id)): Still processing...")
+                        }
+
+                        if case let .failed(error) = clip.poseDetectionStatus {
+                            print("  ⚠️ Clip \(index) (ID: \(clip.id)): Pose detection failed - \(error.localizedDescription)")
+                        } else {
+                            print("  ✅ Clip \(index) (ID: \(clip.id)): Processing complete")
+                        }
+                    }
                 }
 
-                if case let .failed(error) = clip.poseDetectionStatus {
-                    print("  ⚠️ Clip \(index) (ID: \(clip.id)): Pose detection failed - \(error.localizedDescription)")
-                } else {
-                    print("  ✅ Clip \(index) (ID: \(clip.id)): Processing complete")
+                // Wait for all detection tasks to complete
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    for task in detectionTasks {
+                        group.addTask {
+                            try await task.value
+                        }
+                    }
+                    try await group.waitForAll()
                 }
+            } else {
+                print("\n⏩ Proceeding without waiting for pose detection")
             }
 
             // Log clips state

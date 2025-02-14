@@ -5,6 +5,7 @@ struct AIPromptView: View {
     @ObservedObject var viewModel: VideoEditViewModel
     @State private var prompt: String = ""
     @State private var isLoading = false
+    @State private var showingPoseDetectionAlert = false
 
     var body: some View {
         NavigationView {
@@ -27,6 +28,12 @@ struct AIPromptView: View {
                     Task {
                         isLoading = true
                         await viewModel.requestAIEditSuggestion(prompt: prompt)
+                        // If we need to wait for user decision about pose detection
+                        if viewModel.shouldWaitForPoseDetection == nil {
+                            showingPoseDetectionAlert = true
+                            isLoading = false
+                            return
+                        }
                         isLoading = false
                         dismiss()
                     }
@@ -47,6 +54,31 @@ struct AIPromptView: View {
             .navigationBarItems(trailing: Button("Cancel") {
                 dismiss()
             })
+            .alert("Pose Detection In Progress", isPresented: $showingPoseDetectionAlert) {
+                Button("Wait for Detection", role: .none) {
+                    Task {
+                        viewModel.shouldWaitForPoseDetection = true
+                        isLoading = true
+                        await viewModel.requestAIEditSuggestion(prompt: prompt)
+                        isLoading = false
+                        dismiss()
+                    }
+                }
+                Button("Proceed Without Detection", role: .none) {
+                    Task {
+                        viewModel.shouldWaitForPoseDetection = false
+                        isLoading = true
+                        await viewModel.requestAIEditSuggestion(prompt: prompt)
+                        isLoading = false
+                        dismiss()
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    viewModel.shouldWaitForPoseDetection = false
+                }
+            } message: {
+                Text("Some clips are still being analyzed for exercise detection. Would you like to wait for the analysis to complete? This will help the AI make better suggestions about exercise timing and transitions.")
+            }
         }
     }
 }
