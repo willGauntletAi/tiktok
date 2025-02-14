@@ -451,29 +451,29 @@ class VideoEditViewModel: ObservableObject {
                     // and we need bottom-left origin for Core Graphics
                     let centerOffsetX = jointX * naturalSize.width - naturalSize.width / 2
                     let centerOffsetY = (1 - jointY) * naturalSize.height - naturalSize.height / 2
-                    
+
                     // Calculate the maximum allowed translation that would keep the scaled video within bounds
                     // When scaled, the video is larger than the view by (scale - 1) * size
                     // The maximum translation should keep the scaled edges within the original bounds
                     let scaledWidth = naturalSize.width * scale
                     let scaledHeight = naturalSize.height * scale
-                    
+
                     // Calculate the maximum translation that would keep the scaled content within bounds
                     // This is half the difference between the scaled size and the original size
                     let maxOffsetX = (scaledWidth - naturalSize.width) / 2
                     let maxOffsetY = (scaledHeight - naturalSize.height) / 2
-                    
+
                     // Calculate the minimum and maximum allowed translations
                     // These ensure that we don't show empty space on either side
                     let minTx = -maxOffsetX
                     let maxTx = maxOffsetX
                     let minTy = -maxOffsetY
                     let maxTy = maxOffsetY
-                    
+
                     // Clamp the translation to keep the scaled video within bounds
                     let clampedTx = max(minTx, min(maxTx, -centerOffsetX))
                     let clampedTy = max(minTy, min(maxTy, -centerOffsetY))
-                    
+
                     // Apply scale first, then translation
                     return transform
                         .concatenating(scaleTransform)
@@ -485,10 +485,10 @@ class VideoEditViewModel: ObservableObject {
                 {
                     let centerOffsetX = prevJoint.position.x * naturalSize.width - naturalSize.width / 2
                     let centerOffsetY = (1 - prevJoint.position.y) * naturalSize.height - naturalSize.height / 2
-                    
+
                     let maxOffsetX = (naturalSize.width * (scale - 1)) / 2
                     let maxOffsetY = (naturalSize.height * (scale - 1)) / 2
-                    
+
                     let clampedTx = max(-maxOffsetX, min(maxOffsetX, -centerOffsetX))
                     let clampedTy = max(-maxOffsetY, min(maxOffsetY, -centerOffsetY))
 
@@ -502,10 +502,10 @@ class VideoEditViewModel: ObservableObject {
                 {
                     let centerOffsetX = nextJoint.position.x * naturalSize.width - naturalSize.width / 2
                     let centerOffsetY = (1 - nextJoint.position.y) * naturalSize.height - naturalSize.height / 2
-                    
+
                     let maxOffsetX = (naturalSize.width * (scale - 1)) / 2
                     let maxOffsetY = (naturalSize.height * (scale - 1)) / 2
-                    
+
                     let clampedTx = max(-maxOffsetX, min(maxOffsetX, -centerOffsetX))
                     let clampedTy = max(-maxOffsetY, min(maxOffsetY, -centerOffsetY))
 
@@ -555,7 +555,7 @@ class VideoEditViewModel: ObservableObject {
         // Use a fixed interval of 1/30th second for smooth motion
         let interval = 1.0 / 30.0
         layerInstruction.setOpacity(1.0, at: currentTime)
-        
+
         // Calculate the full tracking period
         let trackingStartTime = clip.startTime + zoomConfig.startZoomIn
         let trackingEndTime = if let zoomOutComplete = zoomConfig.zoomOutComplete {
@@ -565,14 +565,14 @@ class VideoEditViewModel: ObservableObject {
         } else {
             clip.endTime
         }
-        
+
         print("🔍 Setting up joint tracking:")
         print("  ├─ Start time: \(trackingStartTime)")
         print("  └─ End time: \(trackingEndTime)")
-        
+
         let duration = trackingEndTime - trackingStartTime
         let keyframeCount = Int(ceil(duration / interval))
-        
+
         print("⏱️ Tracking configuration:")
         print("  ├─ Duration: \(duration)s")
         print("  ├─ Interval: \(interval)s")
@@ -580,19 +580,20 @@ class VideoEditViewModel: ObservableObject {
         print("  ├─ Zoom in complete: \(String(describing: zoomConfig.zoomInComplete))")
         print("  ├─ Start zoom out: \(String(describing: zoomConfig.startZoomOut))")
         print("  └─ Zoom out complete: \(String(describing: zoomConfig.zoomOutComplete))")
-        
+
         print("🎬 Starting keyframe generation")
-        
+
         // Generate all keyframes in a single pass
-        for i in 0..<keyframeCount {
+        for i in 0 ..< keyframeCount {
             let time = trackingStartTime + interval * Double(i)
             let cmTime = CMTime(seconds: time, preferredTimescale: 600)
-            
+
             // Determine which phase of the zoom effect we're in
             let currentTransform: CGAffineTransform
-            
+
             if let zoomInComplete = zoomConfig.zoomInComplete,
-               time <= clip.startTime + zoomInComplete {
+               time <= clip.startTime + zoomInComplete
+            {
                 // During zoom in - interpolate between identity and tracked
                 let progress = (time - trackingStartTime) / (zoomInComplete - zoomConfig.startZoomIn)
                 currentTransform = transform.interpolating(
@@ -601,7 +602,8 @@ class VideoEditViewModel: ObservableObject {
                 )
             } else if let startZoomOut = zoomConfig.startZoomOut,
                       let zoomOutComplete = zoomConfig.zoomOutComplete,
-                      time >= clip.startTime + startZoomOut {
+                      time >= clip.startTime + startZoomOut
+            {
                 // During zoom out - interpolate between tracked and identity
                 let progress = (time - (clip.startTime + startZoomOut)) / (zoomOutComplete - startZoomOut)
                 currentTransform = getTransformForTime(time).interpolating(
@@ -612,11 +614,11 @@ class VideoEditViewModel: ObservableObject {
                 // During full zoom - use tracked transform
                 currentTransform = getTransformForTime(time)
             }
-            
+
             layerInstruction.setTransform(currentTransform, at: cmTime)
             layerInstruction.setOpacity(1.0, at: cmTime)
         }
-        
+
         // Set final transform state if we ended before clip end
         if trackingEndTime < clip.endTime {
             layerInstruction.setTransform(
@@ -625,7 +627,7 @@ class VideoEditViewModel: ObservableObject {
             )
             layerInstruction.setOpacity(1.0, at: CMTime(seconds: trackingEndTime, preferredTimescale: 600))
         }
-        
+
         print("✅ Completed keyframe generation")
     }
 
