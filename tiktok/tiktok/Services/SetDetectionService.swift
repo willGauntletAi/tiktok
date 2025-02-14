@@ -244,7 +244,7 @@ class SetDetectionService {
         // Determine if exercise starts from bottom (ascending) or top (descending)
         let startsFromBottom = firstExtremumIsMin && avgMinValue < avgMaxValue
 
-        // Process each potential cycle
+        // Process each potential cycle using a state machine
         var currentPhase = MovementPhase.initial
         var cycleStart = -1
         var cyclePeak = -1
@@ -274,12 +274,11 @@ class SetDetectionService {
 
             case .peak:
                 if startsFromBottom, minima.contains(i) {
-                    // Complete bottom-to-top-to-bottom cycle
                     let amplitude = distanceSeries[cyclePeak] - distanceSeries[cycleStart]
                     let startToEndDistance = abs(distanceSeries[i] - distanceSeries[cycleStart])
-
-                    // Only count as valid rep if amplitude meets threshold AND end position is close to start
-                    if amplitude >= amplitudeThreshold, startToEndDistance <= tolerance {
+                    // If we're at a boundary (last frame or first rep), relax the tolerance check
+                    let isBoundary = (i == distanceSeries.count - 1) || (cycleStart == 0)
+                    if amplitude >= amplitudeThreshold, isBoundary || startToEndDistance <= tolerance {
                         cycles.append(Cycle(
                             startIndex: cycleStart,
                             peakIndex: cyclePeak,
@@ -299,13 +298,12 @@ class SetDetectionService {
                     }
                     cycleStart = i
                     currentPhase = .ascending
+
                 } else if !startsFromBottom, maxima.contains(i) {
-                    // Complete top-to-bottom-to-top cycle
                     let amplitude = distanceSeries[cycleStart] - distanceSeries[cyclePeak]
                     let startToEndDistance = abs(distanceSeries[i] - distanceSeries[cycleStart])
-
-                    // Only count as valid rep if amplitude meets threshold AND end position is close to start
-                    if amplitude >= amplitudeThreshold, startToEndDistance <= tolerance {
+                    let isBoundary = (i == distanceSeries.count - 1) || (cycleStart == 0)
+                    if amplitude >= amplitudeThreshold, isBoundary || startToEndDistance <= tolerance {
                         cycles.append(Cycle(
                             startIndex: cycleStart,
                             peakIndex: cyclePeak,
@@ -328,7 +326,29 @@ class SetDetectionService {
                 }
 
             case .returning:
-                break // Handled in peak phase
+                break // This state is not used in the current state machine
+            }
+        }
+
+        // After iterating through all frames, check if there's an incomplete cycle at the end.
+        // This covers cases where the rep did not fully return to baseline.
+        if currentPhase != .initial, cycleStart != -1, cyclePeak != -1 {
+            let repEndIndex = distanceSeries.count - 1
+            let amplitude = startsFromBottom
+                ? (distanceSeries[cyclePeak] - distanceSeries[cycleStart])
+                : (distanceSeries[cycleStart] - distanceSeries[cyclePeak])
+            if amplitude >= amplitudeThreshold {
+                cycles.append(Cycle(
+                    startIndex: cycleStart,
+                    peakIndex: cyclePeak,
+                    endIndex: repEndIndex,
+                    amplitude: amplitude,
+                    averageConfidence: 0.8, // TODO: Calculate actual confidence
+                    isAscending: startsFromBottom
+                ))
+                print("✅ Incomplete cycle at boundary added: amplitude = \(String(format: "%.3f", amplitude))")
+            } else {
+                print("⚠️ Incomplete cycle at boundary rejected: insufficient amplitude (\(String(format: "%.3f", amplitude)))")
             }
         }
 
