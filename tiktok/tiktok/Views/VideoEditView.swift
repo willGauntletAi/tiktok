@@ -48,89 +48,87 @@ struct VideoPicker: UIViewControllerRepresentable {
                 self.parent.isAddingClip = true
             }
 
-            // Create a unique temporary file URL
+            // Create a unique temporary file URL with UUID to avoid conflicts
             let tempURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString)
                 .appendingPathExtension("mov")
 
             // First try to get the video file URL directly
             if provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
-                // Try to load as AVURLAsset first for better performance
-                provider.loadItem(forTypeIdentifier: UTType.movie.identifier, options: nil) { [weak self] item, error in
+                // Try to load as file representation first for better performance
+                provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { [weak self] url, error in
                     guard let self = self else { return }
 
                     if let error = error {
-                        print("Error loading video: \(error.localizedDescription)")
-                        DispatchQueue.main.async {
-                            self.parent.isAddingClip = false
-                        }
+                        print("Error loading video file: \(error.localizedDescription)")
+                        // Try fallback method
+                        self.loadVideoAsData(provider: provider, tempURL: tempURL)
                         return
                     }
 
-                    if let videoURL = item as? URL {
-                        // Copy the file to our temporary location
-                        do {
-                            if FileManager.default.fileExists(atPath: tempURL.path) {
-                                try FileManager.default.removeItem(at: tempURL)
-                            }
-                            try FileManager.default.copyItem(at: videoURL, to: tempURL)
+                    guard let originalURL = url else {
+                        // Try fallback method
+                        self.loadVideoAsData(provider: provider, tempURL: tempURL)
+                        return
+                    }
 
-                            DispatchQueue.main.async {
-                                self.parent.onVideoSelected(tempURL)
-                            }
-                        } catch {
-                            print("Error copying video: \(error.localizedDescription)")
-                            DispatchQueue.main.async {
-                                self.parent.isAddingClip = false
-                            }
+                    do {
+                        // Clean up any existing file at the temp URL
+                        if FileManager.default.fileExists(atPath: tempURL.path) {
+                            try FileManager.default.removeItem(at: tempURL)
                         }
-                    } else if let videoData = item as? Data {
-                        // If we got data directly, write it to the file
-                        do {
-                            try videoData.write(to: tempURL)
-                            DispatchQueue.main.async {
-                                self.parent.onVideoSelected(tempURL)
-                            }
-                        } catch {
-                            print("Error writing video data: \(error.localizedDescription)")
-                            DispatchQueue.main.async {
-                                self.parent.isAddingClip = false
-                            }
+                        try FileManager.default.copyItem(at: originalURL, to: tempURL)
+
+                        DispatchQueue.main.async {
+                            self.parent.onVideoSelected(tempURL)
                         }
-                    } else {
-                        // Fallback to file representation if direct methods fail
-                        provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, error in
-                            if let error = error {
-                                print("Error loading video file: \(error.localizedDescription)")
-                                DispatchQueue.main.async {
-                                    self.parent.isAddingClip = false
-                                }
-                                return
-                            }
+                    } catch {
+                        print("Error copying video: \(error.localizedDescription)")
+                        // Try fallback method
+                        self.loadVideoAsData(provider: provider, tempURL: tempURL)
+                    }
+                }
+            } else {
+                // Try fallback method
+                loadVideoAsData(provider: provider, tempURL: tempURL)
+            }
+        }
 
-                            guard let url = url else {
-                                DispatchQueue.main.async {
-                                    self.parent.isAddingClip = false
-                                }
-                                return
-                            }
+        private func loadVideoAsData(provider: NSItemProvider, tempURL: URL) {
+            // Fallback to loading as Data
+            provider.loadItem(forTypeIdentifier: UTType.movie.identifier, options: nil) { [weak self] item, error in
+                guard let self = self else { return }
 
-                            do {
-                                if FileManager.default.fileExists(atPath: tempURL.path) {
-                                    try FileManager.default.removeItem(at: tempURL)
-                                }
-                                try FileManager.default.copyItem(at: url, to: tempURL)
+                if let error = error {
+                    print("Error loading video data: \(error.localizedDescription)")
+                    DispatchQueue.main.async {
+                        self.parent.isAddingClip = false
+                    }
+                    return
+                }
 
-                                DispatchQueue.main.async {
-                                    self.parent.onVideoSelected(tempURL)
-                                }
-                            } catch {
-                                print("Error copying video: \(error.localizedDescription)")
-                                DispatchQueue.main.async {
-                                    self.parent.isAddingClip = false
-                                }
-                            }
+                if let videoData = item as? Data {
+                    do {
+                        // Clean up any existing file at the temp URL
+                        if FileManager.default.fileExists(atPath: tempURL.path) {
+                            try FileManager.default.removeItem(at: tempURL)
                         }
+                        try videoData.write(to: tempURL)
+                        DispatchQueue.main.async {
+                            self.parent.onVideoSelected(tempURL)
+                        }
+                    } catch {
+                        print("Error writing video data: \(error.localizedDescription)")
+                        // Clean up on error
+                        try? FileManager.default.removeItem(at: tempURL)
+                        DispatchQueue.main.async {
+                            self.parent.isAddingClip = false
+                        }
+                    }
+                } else {
+                    print("Could not get video data")
+                    DispatchQueue.main.async {
+                        self.parent.isAddingClip = false
                     }
                 }
             }
@@ -634,9 +632,13 @@ struct VideoEditView: View {
                     do {
                         try await viewModel.addClip(from: url)
                         isAddingClip = false
+                        // Clean up the temporary file after it's been added to the composition
+                        try? FileManager.default.removeItem(at: url)
                     } catch {
                         print("Error adding clip: \(error.localizedDescription)")
                         isAddingClip = false
+                        // Clean up the temporary file on error
+                        try? FileManager.default.removeItem(at: url)
                     }
                 }
             }
@@ -646,8 +648,12 @@ struct VideoEditView: View {
                 Task { @MainActor in
                     do {
                         try await viewModel.addClip(from: url)
+                        // Clean up the temporary file after it's been added to the composition
+                        try? FileManager.default.removeItem(at: url)
                     } catch {
                         print("Error adding recorded clip: \(error.localizedDescription)")
+                        // Clean up the temporary file on error
+                        try? FileManager.default.removeItem(at: url)
                     }
                 }
             })
@@ -658,6 +664,15 @@ struct VideoEditView: View {
                 print("Generated song at: \(storageRef)")
                 // TODO: Add the song to the video
             }
+        }
+        .onDisappear {
+            // Ensure cleanup when view disappears
+            viewModel.cleanup()
+            // Clean up any remaining temporary files
+            let tempDir = FileManager.default.temporaryDirectory
+            try? FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil)
+                .filter { $0.pathExtension == "mov" }
+                .forEach { try? FileManager.default.removeItem(at: $0) }
         }
         // Add shake gesture support
         .onShake {

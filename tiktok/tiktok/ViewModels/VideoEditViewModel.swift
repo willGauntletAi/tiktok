@@ -232,69 +232,95 @@ class VideoEditViewModel: ObservableObject {
 
     // Remove UndoManager-related code from all action methods
     func updateClipTrim(startTime: Double, endTime: Double) {
-        guard var clip = selectedClip,
+        guard let clip = selectedClip,
               let index = selectedClipIndex
         else { return }
 
-        print("🔄 Trimming clip \(clip.id):")
+        print("🔄 Trimming clip \(clip.id) using split and remove:")
         print("  Original state:")
         print("    - Composition times: \(clip.startTime) to \(clip.endTime)")
         print("    - Asset times: \(clip.assetStartTime) to \(clip.assetStartTime + clip.assetDuration)")
+        print("    - Target trim: \(startTime) to \(endTime)")
 
-        // Calculate the relative offset within the clip
-        let relativeStartOffset = startTime - clip.startTime
-        let relativeEndOffset = endTime - clip.startTime
-
-        // Update asset times
-        let newAssetStartTime = clip.assetStartTime + relativeStartOffset
-        let newAssetDuration = relativeEndOffset - relativeStartOffset
-
-        // Update composition times
-        clip.startTime = startTime
-        clip.endTime = endTime
-        clip.assetStartTime = newAssetStartTime
-        clip.assetDuration = newAssetDuration
-
-        // Preserve pose detection status and results
-        if let poseResults = clip.poseResults {
-            // Filter pose results to only include those within the new time range
-            clip.poseResults = poseResults.filter { result in
-                let relativeTime = result.timestamp - clip.assetStartTime
-                return relativeTime >= 0 && relativeTime <= clip.assetDuration
-            }
-        }
-
-        if let detectedSets = clip.detectedSets {
-            // Filter detected sets to only include those within the new time range
-            clip.detectedSets = detectedSets.filter { set in
-                let relativeStartTime = set.startTime - clip.assetStartTime
-                let relativeEndTime = set.endTime - clip.assetStartTime
-                return relativeStartTime >= 0 && relativeEndTime <= clip.assetDuration
-            }
-        }
-
-        print("  New state:")
-        print("    - Composition times: \(clip.startTime) to \(clip.endTime)")
-        print("    - Asset times: \(clip.assetStartTime) to \(clip.assetStartTime + clip.assetDuration)")
-        print("    - Pose Results: \(clip.poseResults?.count ?? 0)")
-        print("    - Detected Sets: \(clip.detectedSets?.count ?? 0)")
-
-        clips[index] = clip
-
-        // Add to history
-        addHistoryEntry(
-            title: "Trim Clip",
-            action: .trimClip(
-                clipId: clip.id,
-                startTime: startTime,
-                endTime: endTime
-            )
-        )
-
-        // Update player with new composition
         Task {
-            await setupPlayerWithComposition()
-            await player?.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
+                // Calculate how much time we'll remove from the start (if any)
+                let startTimeRemoval = startTime > clip.startTime ? startTime - clip.startTime : 0
+                print("  Start time removal: \(String(format: "%.2f", startTimeRemoval))s")
+
+                // Adjust the end split point by the amount we'll remove from the start
+                let adjustedEndTime = endTime - startTimeRemoval
+                print("  Adjusted end time: \(String(format: "%.2f", adjustedEndTime))s")
+
+                // Keep track of our target clip's ID since the index will change
+                let targetClipId = clip.id
+                var currentIndex = index
+
+                // Step 1: If we need to trim the start, split at the new start point and remove the first part
+                if startTime > clip.startTime {
+                    print("  Splitting at start point: \(startTime)")
+                    await splitClip(at: startTime)
+                    
+                    // Find where our target clip went after the split
+                    if let newIndex = clips.firstIndex(where: { $0.id == targetClipId }) {
+                        print("  Target clip moved to index \(newIndex)")
+                        currentIndex = newIndex
+                    } else {
+                        print("❌ Lost track of target clip after split")
+                        return
+                    }
+                    
+                    // Remove the first part (which is one index before our current position)
+                    let deleteIndex = currentIndex - 1
+                    if deleteIndex >= 0 && deleteIndex < clips.count {
+                        print("  Removing first part at index \(deleteIndex)")
+                        deleteClip(at: deleteIndex)
+                        // After deletion, our target clip moved back one position
+                        currentIndex -= 1
+                    }
+                }
+
+                // Verify we can still find our clip
+                guard let finalIndex = clips.firstIndex(where: { $0.id == targetClipId }) else {
+                    print("❌ Lost track of target clip before end trim")
+                    return
+                }
+                currentIndex = finalIndex
+                
+                // Get the updated clip state
+                if clips[safe: currentIndex] == nil {
+                    print("❌ Target clip index out of bounds")
+                    return
+                }
+
+                // Step 2: If we need to trim the end, split at the adjusted end time and remove the second part
+                if endTime < clip.endTime {
+                    print("  Splitting at adjusted end point: \(adjustedEndTime)")
+                    await splitClip(at: adjustedEndTime)
+                    
+                    // Find our clip's position again after the split
+                    if let newIndex = clips.firstIndex(where: { $0.id == targetClipId }) {
+                        print("  Target clip at index \(newIndex)")
+                        currentIndex = newIndex
+                        
+                        // Remove the second part (which is right after our current position)
+                        if clips.count > currentIndex + 1 {
+                            print("  Removing second part at index \(currentIndex + 1)")
+                            deleteClip(at: currentIndex + 1)
+                        }
+                    } else {
+                        print("❌ Lost track of target clip after end split")
+                        return
+                    }
+                }
+
+                print("  Final state:")
+                if let finalClip = clips.first(where: { $0.id == targetClipId }) {
+                    print("    - Composition times: \(finalClip.startTime) to \(finalClip.endTime)")
+                    print("    - Asset times: \(finalClip.assetStartTime) to \(finalClip.assetStartTime + finalClip.assetDuration)")
+                }
+
+                // Update player position
+                await player?.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
         }
     }
 
@@ -938,46 +964,40 @@ class VideoEditViewModel: ObservableObject {
     }
 
     func deleteClip(at index: Int) {
-        let clipId = clips[index].id
-        // Remove the clip from the array
+        guard index >= 0 && index < clips.count else { return }
+        
+        print("🗑️ Deleting clip at index \(index)")
+        let clip = clips[index]
+        print("  Clip duration: \(clip.endTime - clip.startTime)")
+        
+        // Remove the clip
         clips.remove(at: index)
-
-        // Update selected clip index
-        if selectedClipIndex == index {
-            selectedClipIndex = clips.isEmpty ? nil : min(index, clips.count - 1)
-        } else if let selected = selectedClipIndex, selected > index {
-            selectedClipIndex = selected - 1
+        
+        // Adjust the start times of all subsequent clips
+        let removedDuration = clip.endTime - clip.startTime
+        for i in index..<clips.count {
+            var adjustedClip = clips[i]
+            adjustedClip.startTime -= removedDuration
+            adjustedClip.endTime -= removedDuration
+            clips[i] = adjustedClip
         }
-
+        
         // Add to history
         addHistoryEntry(
             title: "Delete Clip",
             action: .deleteClip(index: index)
         )
-
-        // Create new composition with remaining clips
+        
+        // Update the selected clip index if needed
+        if selectedClipIndex == index {
+            selectedClipIndex = clips.isEmpty ? nil : min(index, clips.count - 1)
+        } else if let selected = selectedClipIndex, selected > index {
+            selectedClipIndex = selected - 1
+        }
+        
+        // Update the composition
         Task {
-            // Remove existing time observer before rebuilding
-            if let observer = timeObserver {
-                player?.removeTimeObserver(observer)
-                timeObserver = nil
-            }
-
-            await MainActor.run {
-                isProcessing = true
-            }
-
-            do {
-                try await rebuildComposition()
-                await MainActor.run {
-                    isProcessing = false
-                }
-            } catch {
-                print("Error rebuilding composition after delete: \(error.localizedDescription)")
-                await MainActor.run {
-                    isProcessing = false
-                }
-            }
+            await setupPlayerWithComposition()
         }
     }
 
@@ -1249,295 +1269,165 @@ class VideoEditViewModel: ObservableObject {
     }
 
     func splitClip(at time: Double) async {
-        print("Starting splitClip operation at time: \(time)")
-        if clips.isEmpty ||
-            !time.isFinite ||
-            time.isNaN
-        {
-            print("Invalid split parameters")
-            return
-        }
-
-        let oldClips = clips
-        let oldSelectedIndex = selectedClipIndex
-
-        // Find which clip contains the split point
+        print("🔄 Splitting clip at absolute time: \(time)")
+        
+        // Find which clip contains this time by accumulating durations
         var accumulatedTime = 0.0
-        var clipToSplit: Int?
-
+        var targetIndex: Int?
+        var relativeTime: Double = 0.0
+        
         for (index, clip) in clips.enumerated() {
-            let clipEnd = accumulatedTime + (clip.endTime - clip.startTime)
-            if time > accumulatedTime && time < clipEnd {
-                clipToSplit = index
+            let clipDuration = clip.endTime - clip.startTime
+            if time > accumulatedTime && time < accumulatedTime + clipDuration {
+                targetIndex = index
+                relativeTime = time - accumulatedTime
                 break
             }
-            accumulatedTime = clipEnd
+            accumulatedTime += clipDuration
         }
-
-        guard let clipIndex = clipToSplit else {
-            print("Split time outside any clip bounds")
+        
+        guard let index = targetIndex else {
+            print("❌ No clip found at time \(time)")
             return
         }
-
-        let relativeTime = time - accumulatedTime
-        print("Splitting clip \(clipIndex) at relative time \(relativeTime)")
-
-        await MainActor.run {
-            isProcessing = true
-            print("Set isProcessing to true")
-        }
-
-        defer {
-            Task { @MainActor in
-                isProcessing = false
-                print("Set isProcessing to false")
-            }
-        }
-
+        
+        let clip = clips[index]
+        print("  Found clip \(clip.id) at index \(index)")
+        print("  Clip range: \(clip.startTime) to \(clip.endTime)")
+        print("  Relative split time: \(relativeTime)")
+        
         do {
-            // Create a new composition
-            let newComposition = AVMutableComposition()
-            var currentTime = CMTime.zero
-
-            // Process each clip
-            for (index, currentClip) in clips.enumerated() {
-                if index == clipIndex {
-                    // Get the video track from the original asset
-                    guard let videoTrack = try await currentClip.asset.loadTracks(withMediaType: AVMediaType.video).first else {
-                        print("No video track found")
-                        continue
-                    }
-
-                    // First part
-                    let firstVideoTrack = newComposition.addMutableTrack(
-                        withMediaType: AVMediaType.video,
-                        preferredTrackID: kCMPersistentTrackID_Invalid
-                    )
-
-                    let firstPartRange = CMTimeRange(
-                        start: .zero,
-                        duration: CMTime(seconds: relativeTime, preferredTimescale: 600)
-                    )
-
-                    try firstVideoTrack?.insertTimeRange(
-                        firstPartRange,
-                        of: videoTrack,
-                        at: currentTime
-                    )
-
-                    // Add audio for first part
-                    if let audioTrack = try await currentClip.asset.loadTracks(withMediaType: AVMediaType.audio).first {
-                        let firstAudioTrack = newComposition.addMutableTrack(
-                            withMediaType: AVMediaType.audio,
-                            preferredTrackID: kCMPersistentTrackID_Invalid
-                        )
-
-                        try firstAudioTrack?.insertTimeRange(
-                            firstPartRange,
-                            of: audioTrack,
-                            at: currentTime
-                        )
-                    }
-
-                    currentTime = currentTime + firstPartRange.duration
-
-                    // Second part
-                    let secondVideoTrack = newComposition.addMutableTrack(
-                        withMediaType: AVMediaType.video,
-                        preferredTrackID: kCMPersistentTrackID_Invalid
-                    )
-
-                    let secondPartRange = CMTimeRange(
-                        start: CMTime(seconds: relativeTime, preferredTimescale: 600),
-                        duration: CMTime(seconds: currentClip.endTime - currentClip.startTime - relativeTime, preferredTimescale: 600)
-                    )
-
-                    try secondVideoTrack?.insertTimeRange(
-                        secondPartRange,
-                        of: videoTrack,
-                        at: currentTime
-                    )
-
-                    // Add audio for second part
-                    if let audioTrack = try await currentClip.asset.loadTracks(withMediaType: AVMediaType.audio).first {
-                        let secondAudioTrack = newComposition.addMutableTrack(
-                            withMediaType: AVMediaType.audio,
-                            preferredTrackID: kCMPersistentTrackID_Invalid
-                        )
-
-                        try secondAudioTrack?.insertTimeRange(
-                            secondPartRange,
-                            of: audioTrack,
-                            at: currentTime
-                        )
-                    }
-
-                    currentTime = currentTime + secondPartRange.duration
-
-                    // Generate thumbnails for both parts
-                    let imageGenerator = AVAssetImageGenerator(asset: currentClip.asset)
-                    imageGenerator.appliesPreferredTrackTransform = true
-                    imageGenerator.maximumSize = CGSize(width: 200, height: 200)
-                    imageGenerator.requestedTimeToleranceBefore = .zero
-                    imageGenerator.requestedTimeToleranceAfter = .zero
-
-                    // Thumbnail for first part
-                    let firstThumbnailTime = CMTime(seconds: 0.03, preferredTimescale: 600)
-                    let firstImage = try await imageGenerator.image(at: firstThumbnailTime)
-                    let firstThumbnail = UIImage(cgImage: firstImage.image)
-
-                    // Thumbnail for second part
-                    let secondThumbnailTime = CMTime(seconds: relativeTime + 0.03, preferredTimescale: 600)
-                    let secondImage = try await imageGenerator.image(at: secondThumbnailTime)
-                    let secondThumbnail = UIImage(cgImage: secondImage.image)
-
-                    // Update clips array
-                    await MainActor.run {
-                        // Update the original clip with first part
-                        var firstClip = clips[clipIndex]
-                        firstClip.thumbnail = firstThumbnail
-                        firstClip.endTime = time
-                        firstClip.assetDuration = relativeTime
-
-                        // Split pose results between the two clips
-                        if let poseResults = firstClip.poseResults {
-                            firstClip.poseResults = poseResults.filter { result in
-                                let relativeTime = result.timestamp - firstClip.assetStartTime
-                                return relativeTime >= 0 && relativeTime <= firstClip.assetDuration
-                            }
-                        }
-
-                        // Split detected sets between the two clips
-                        if let detectedSets = firstClip.detectedSets {
-                            firstClip.detectedSets = detectedSets.filter { set in
-                                let relativeStartTime = set.startTime - firstClip.assetStartTime
-                                let relativeEndTime = set.endTime - firstClip.assetStartTime
-                                return relativeStartTime >= 0 && relativeEndTime <= firstClip.assetDuration
-                            }
-                        }
-
-                        clips[clipIndex] = firstClip
-
-                        // Create and insert the second part
-                        var secondClip = VideoClip(
-                            asset: currentClip.asset,
-                            startTime: time,
-                            endTime: currentClip.endTime,
-                            thumbnail: secondThumbnail,
-                            assetStartTime: relativeTime,
-                            assetDuration: currentClip.assetDuration - relativeTime
-                        )
-
-                        // Add pose results for the second clip
-                        if let poseResults = currentClip.poseResults {
-                            secondClip.poseResults = poseResults.filter { result in
-                                let relativeTime = result.timestamp - secondClip.assetStartTime
-                                return relativeTime >= 0 && relativeTime <= secondClip.assetDuration
-                            }
-                        }
-
-                        // Add detected sets for the second clip
-                        if let detectedSets = currentClip.detectedSets {
-                            secondClip.detectedSets = detectedSets.filter { set in
-                                let relativeStartTime = set.startTime - secondClip.assetStartTime
-                                let relativeEndTime = set.endTime - secondClip.assetStartTime
-                                return relativeStartTime >= 0 && relativeEndTime <= secondClip.assetDuration
-                            }
-                        }
-
-                        // Set pose detection status based on original clip
-                        secondClip.poseDetectionStatus = currentClip.poseDetectionStatus
-
-                        clips.insert(secondClip, at: clipIndex + 1)
-                    }
-                } else {
-                    // Copy this clip as is
-                    guard let videoTrack = try await currentClip.asset.loadTracks(withMediaType: AVMediaType.video).first else { continue }
-
-                    let clipDuration = currentClip.endTime - currentClip.startTime
-                    let clipTimeRange = CMTimeRange(
-                        start: .zero,
-                        duration: CMTime(seconds: clipDuration, preferredTimescale: 600)
-                    )
-
-                    let compositionVideoTrack = newComposition.addMutableTrack(
-                        withMediaType: AVMediaType.video,
-                        preferredTrackID: kCMPersistentTrackID_Invalid
-                    )
-
-                    try compositionVideoTrack?.insertTimeRange(
-                        clipTimeRange,
-                        of: videoTrack,
-                        at: currentTime
-                    )
-
-                    // Add audio if available
-                    if let audioTrack = try await currentClip.asset.loadTracks(withMediaType: AVMediaType.audio).first {
-                        let compositionAudioTrack = newComposition.addMutableTrack(
-                            withMediaType: AVMediaType.audio,
-                            preferredTrackID: kCMPersistentTrackID_Invalid
-                        )
-
-                        try compositionAudioTrack?.insertTimeRange(
-                            clipTimeRange,
-                            of: audioTrack,
-                            at: currentTime
-                        )
-                    }
-
-                    currentTime = currentTime + clipTimeRange.duration
-                }
+            // Create a new composition for the split operation
+            let splitComposition = AVMutableComposition()
+            
+            // Get the video track from the original asset
+            guard let videoTrack = try await clip.asset.loadTracks(withMediaType: .video).first else {
+                print("❌ No video track found")
+                return
             }
-
-            // Setup video composition using the helper
-            let videoComposition = try await setupVideoComposition(for: newComposition, clips: clips)
-
-            // Update the composition and player
-            await MainActor.run {
-                self.composition = newComposition
-                totalDuration = currentTime.seconds
-
-                // Create new player item with the updated composition
-                let playerItem = AVPlayerItem(asset: newComposition)
-                playerItem.videoComposition = videoComposition
-
-                if let player = player {
-                    player.replaceCurrentItem(with: playerItem)
-                } else {
-                    player = AVPlayer(playerItem: playerItem)
-                }
-
-                // Setup time observer if needed
-                if timeObserver == nil {
-                    setupTimeObserver()
-                }
-
-                // Seek to the split point and play
-                Task {
-                    await player?.seek(
-                        to: CMTime(seconds: time, preferredTimescale: 600),
-                        toleranceBefore: .zero,
-                        toleranceAfter: .zero
-                    )
-                    player?.play()
-                }
-            }
-
-            // Add to history
-            addHistoryEntry(
-                title: "Split Clip",
-                action: .splitClip(time: time)
+            
+            // Create two video tracks in the new composition
+            let firstVideoTrack = splitComposition.addMutableTrack(
+                withMediaType: .video,
+                preferredTrackID: kCMPersistentTrackID_Invalid
             )
-
-            print("Successfully completed splitClip operation")
-        } catch {
-            // If split fails, restore original state
-            await MainActor.run {
-                clips = oldClips
-                selectedClipIndex = oldSelectedIndex
+            
+            let secondVideoTrack = splitComposition.addMutableTrack(
+                withMediaType: .video,
+                preferredTrackID: kCMPersistentTrackID_Invalid
+            )
+            
+            // Calculate time ranges for the split
+            let splitPoint = CMTime(seconds: relativeTime, preferredTimescale: 600)
+            let firstRange = CMTimeRange(
+                start: CMTime(seconds: clip.assetStartTime, preferredTimescale: 600),
+                end: CMTime(seconds: clip.assetStartTime + relativeTime, preferredTimescale: 600)
+            )
+            let secondRange = CMTimeRange(
+                start: CMTime(seconds: clip.assetStartTime + relativeTime, preferredTimescale: 600),
+                end: CMTime(seconds: clip.assetStartTime + clip.assetDuration, preferredTimescale: 600)
+            )
+            
+            // Insert the video segments
+            try firstVideoTrack?.insertTimeRange(firstRange, of: videoTrack, at: .zero)
+            try secondVideoTrack?.insertTimeRange(secondRange, of: videoTrack, at: .zero)
+            
+            // Handle audio tracks if they exist
+            if let audioTrack = try await clip.asset.loadTracks(withMediaType: .audio).first {
+                let firstAudioTrack = splitComposition.addMutableTrack(
+                    withMediaType: .audio,
+                    preferredTrackID: kCMPersistentTrackID_Invalid
+                )
+                
+                let secondAudioTrack = splitComposition.addMutableTrack(
+                    withMediaType: .audio,
+                    preferredTrackID: kCMPersistentTrackID_Invalid
+                )
+                
+                try firstAudioTrack?.insertTimeRange(firstRange, of: audioTrack, at: .zero)
+                try secondAudioTrack?.insertTimeRange(secondRange, of: audioTrack, at: .zero)
             }
-            print("Error in splitClip: \(error.localizedDescription)")
-            print("Error details: \(error)")
+            
+            // Generate thumbnails for both parts
+            let imageGenerator = AVAssetImageGenerator(asset: clip.asset)
+            imageGenerator.appliesPreferredTrackTransform = true
+            imageGenerator.maximumSize = CGSize(width: 200, height: 200)
+            
+            let firstThumbnailTime = CMTime(seconds: clip.assetStartTime + 0.03, preferredTimescale: 600)
+            let secondThumbnailTime = CMTime(seconds: clip.assetStartTime + relativeTime + 0.03, preferredTimescale: 600)
+            
+            let firstImage = try await imageGenerator.image(at: firstThumbnailTime)
+            let secondImage = try await imageGenerator.image(at: secondThumbnailTime)
+            
+            // Create the two new clips
+            var firstClip = VideoClip(
+                asset: clip.asset,
+                startTime: clip.startTime,
+                endTime: clip.startTime + relativeTime,
+                thumbnail: UIImage(cgImage: firstImage.image),
+                assetStartTime: clip.assetStartTime,
+                assetDuration: relativeTime
+            )
+            
+            var secondClip = VideoClip(
+                asset: clip.asset,
+                startTime: clip.startTime + relativeTime,
+                endTime: clip.endTime,
+                thumbnail: UIImage(cgImage: secondImage.image),
+                assetStartTime: clip.assetStartTime + relativeTime,
+                assetDuration: clip.assetDuration - relativeTime
+            )
+            
+            // Copy over pose detection results and split them between the clips
+            if let poseResults = clip.poseResults {
+                firstClip.poseResults = poseResults.filter { result in
+                    let relativeTime = result.timestamp - firstClip.assetStartTime
+                    return relativeTime >= 0 && relativeTime <= firstClip.assetDuration
+                }
+                
+                secondClip.poseResults = poseResults.filter { result in
+                    let relativeTime = result.timestamp - secondClip.assetStartTime
+                    return relativeTime >= 0 && relativeTime <= secondClip.assetDuration
+                }
+            }
+            
+            // Copy over detected sets and split them between the clips
+            if let detectedSets = clip.detectedSets {
+                firstClip.detectedSets = detectedSets.filter { set in
+                    let relativeStartTime = set.startTime - firstClip.assetStartTime
+                    let relativeEndTime = set.endTime - firstClip.assetStartTime
+                    return relativeStartTime >= 0 && relativeEndTime <= firstClip.assetDuration
+                }
+                
+                secondClip.detectedSets = detectedSets.filter { set in
+                    let relativeStartTime = set.startTime - secondClip.assetStartTime
+                    let relativeEndTime = set.endTime - secondClip.assetStartTime
+                    return relativeStartTime >= 0 && relativeEndTime <= secondClip.assetDuration
+                }
+            }
+            
+            // Set pose detection status for both clips
+            firstClip.poseDetectionStatus = clip.poseDetectionStatus
+            secondClip.poseDetectionStatus = clip.poseDetectionStatus
+            
+            // Update the clips array
+            await MainActor.run {
+                clips.remove(at: index)
+                clips.insert(secondClip, at: index)
+                clips.insert(firstClip, at: index)
+                
+                // Add to history
+                addHistoryEntry(
+                    title: "Split Clip",
+                    action: .splitClip(time: time)
+                )
+            }
+            
+            // Rebuild the composition
+            await setupPlayerWithComposition()
+            
+        } catch {
+            print("❌ Error splitting clip: \(error.localizedDescription)")
         }
     }
 
@@ -1652,35 +1542,55 @@ class VideoEditViewModel: ObservableObject {
         }
 
         do {
-            print("🔍 DEBUG: Starting AI suggestion request")
-            print("📝 Prompt:", prompt)
+            print("\n🎬 AI Edit Suggestion Request Log")
+            print("================================")
+            print("📝 User Prompt:", prompt)
 
             // Wait for all pose detection to complete
-            for clip in clips {
+            print("\n⏳ Waiting for Pose Detection")
+            print("----------------------------")
+            for (index, clip) in clips.enumerated() {
                 while clip.poseDetectionStatus == .pending || clip.poseDetectionStatus == .inProgress {
                     try await Task.sleep(nanoseconds: 100_000_000) // 100ms
-                    print("Waiting for pose detection to complete for clip \(clip.id)")
+                    print("  ⌛️ Clip \(index) (ID: \(clip.id)): Still processing...")
                 }
 
                 if case let .failed(error) = clip.poseDetectionStatus {
-                    print("⚠️ Warning: Pose detection failed for clip \(clip.id): \(error.localizedDescription)")
+                    print("  ⚠️ Clip \(index) (ID: \(clip.id)): Pose detection failed - \(error.localizedDescription)")
+                } else {
+                    print("  ✅ Clip \(index) (ID: \(clip.id)): Processing complete")
                 }
             }
 
             // Log clips state
-            print("\n📎 Current Clips State:")
+            print("\n📊 Current Clips State")
+            print("--------------------")
             for (index, clip) in clips.enumerated() {
-                print("  Clip \(index):")
-                print("    - ID:", clip.id)
-                print("    - Start Time:", clip.startTime)
-                print("    - End Time:", clip.endTime)
-                print("    - Has ZoomConfig:", clip.zoomConfig != nil)
+                print("\n  🎥 Clip \(index):")
+                print("    • ID: \(clip.id)")
+                print("    • Duration: \(String(format: "%.2f", clip.endTime - clip.startTime))s")
+                print("    • Timeline Position: \(String(format: "%.2f", clip.startTime))s → \(String(format: "%.2f", clip.endTime))s")
+                print("    • Asset Range: \(String(format: "%.2f", clip.assetStartTime))s → \(String(format: "%.2f", clip.assetStartTime + clip.assetDuration))s")
+                
                 if let config = clip.zoomConfig {
-                    print("    - ZoomConfig:")
-                    print("      - startZoomIn:", config.startZoomIn)
-                    print("      - zoomInComplete:", String(describing: config.zoomInComplete))
-                    print("      - startZoomOut:", String(describing: config.startZoomOut))
-                    print("      - zoomOutComplete:", String(describing: config.zoomOutComplete))
+                    print("    • Zoom Configuration:")
+                    print("      - Start Zoom In: \(String(format: "%.2f", config.startZoomIn))s")
+                    if let complete = config.zoomInComplete {
+                        print("      - Zoom In Complete: \(String(format: "%.2f", complete))s")
+                    }
+                    if let start = config.startZoomOut {
+                        print("      - Start Zoom Out: \(String(format: "%.2f", start))s")
+                    }
+                    if let complete = config.zoomOutComplete {
+                        print("      - Zoom Out Complete: \(String(format: "%.2f", complete))s")
+                    }
+                }
+                
+                if let sets = clip.detectedSets {
+                    print("    • Detected Exercise Sets: \(sets.count)")
+                    for (setIndex, set) in sets.enumerated() {
+                        print("      Set \(setIndex + 1): \(set.reps) reps (\(String(format: "%.2f", set.startTime))s → \(String(format: "%.2f", set.endTime))s)")
+                    }
                 }
             }
 
@@ -1715,26 +1625,36 @@ class VideoEditViewModel: ObservableObject {
                 )
             }
 
-            print("\n🎬 AI Clip States:")
+            print("\n🤖 AI State Representation")
+            print("-----------------------")
             for (index, state) in aiClipStates.enumerated() {
-                print("  State \(index):")
-                print("    - ID:", state.id)
-                print("    - Start Time:", state.startTime)
-                print("    - End Time:", state.endTime)
-                print("    - ZoomConfig:", state.zoomConfig ?? "nil")
+                print("\n  Clip \(index) State:")
+                print("    • ID: \(state.id)")
+                print("    • Timeline: \(String(format: "%.2f", state.startTime))s → \(String(format: "%.2f", state.endTime))s")
+                if let zoom = state.zoomConfig {
+                    print("    • Zoom Config:", zoom)
+                }
+                if let sets = state.detectedSets {
+                    print("    • Exercise Sets: \(sets.count)")
+                    for (setIndex, set) in sets.enumerated() {
+                        print("      Set \(setIndex + 1): \(set.reps) reps at \(set.keyJoint) (\(String(format: "%.2f", set.startTime))s → \(String(format: "%.2f", set.endTime))s)")
+                    }
+                }
             }
 
-            // Create and log editor state
+            // Log editor state
             let currentState = AIEditorState(
                 clips: aiClipStates,
                 selectedClipIndex: selectedClipIndex
             )
 
-            print("\n📋 Editor State:")
-            print("  - Number of clips:", currentState.clips.count)
-            print("  - Selected Index:", String(describing: currentState.selectedClipIndex))
+            print("\n🎯 Editor State")
+            print("-------------")
+            print("  • Total Clips: \(currentState.clips.count)")
+            print("  • Selected Clip Index: \(currentState.selectedClipIndex?.description ?? "none")")
+            print("  • Total Duration: \(String(format: "%.2f", totalDuration))s")
 
-            // Create and log edit history
+            // Log edit history
             let aiEditHistory = editHistory.map { entry in
                 // Convert EditAction to AIEditAction
                 let aiAction: AIEditAction
@@ -1774,14 +1694,48 @@ class VideoEditViewModel: ObservableObject {
                 )
             }
 
-            print("\n📜 Edit History:")
+            print("\n📜 Edit History")
+            print("-------------")
             for (index, entry) in aiEditHistory.enumerated() {
-                print("  Entry \(index):")
-                print("    - ID:", entry.id)
-                print("    - Title:", entry.title)
-                print("    - Timestamp:", entry.timestamp)
-                print("    - Action:", entry.action)
-                print("    - Is Applied:", entry.isApplied)
+                print("\n  Edit \(index + 1):")
+                print("    • ID: \(entry.id)")
+                print("    • Action: \(entry.action.type)")
+                print("    • Title: \(entry.title)")
+                print("    • Timestamp: \(Date(timeIntervalSince1970: entry.timestamp / 1000))")
+                
+                // Print action-specific details
+                switch entry.action.type {
+                    case "addClip":
+                        if let clipId = entry.action.clipId {
+                            print("    • Added Clip ID: \(clipId)")
+                        }
+                    case "deleteClip":
+                        if let index = entry.action.index {
+                            print("    • Deleted at Index: \(index)")
+                        }
+                    case "moveClip":
+                        if let from = entry.action.from, let to = entry.action.to {
+                            print("    • Moved from \(from) to \(to)")
+                        }
+                    case "splitClip":
+                        if let time = entry.action.time {
+                            print("    • Split at: \(String(format: "%.2f", time))s")
+                        }
+                    case "trimClip":
+                        if let start = entry.action.startTime, let end = entry.action.endTime {
+                            print("    • Trimmed: \(String(format: "%.2f", start))s → \(String(format: "%.2f", end))s")
+                        }
+                    case "updateVolume":
+                        if let volume = entry.action.volume {
+                            print("    • Volume set to: \(String(format: "%.2f", volume))")
+                        }
+                    case "updateZoom":
+                        if let config = entry.action.config {
+                            print("    • Zoom config updated: \(config)")
+                        }
+                    default:
+                        break
+                }
             }
 
             // Create final request
@@ -1791,20 +1745,26 @@ class VideoEditViewModel: ObservableObject {
                 editHistory: aiEditHistory
             )
 
-            // Configure encoder (removed date encoding strategy since we're using TimeInterval)
+            print("\n📦 Request Summary")
+            print("----------------")
+            print("  • Prompt: \(prompt)")
+            print("  • Total Clips: \(currentState.clips.count)")
+            print("  • History Entries: \(aiEditHistory.count)")
+
+            // Configure encoder
             let encoder = JSONEncoder()
-            encoder.outputFormatting = .prettyPrinted
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             encoder.keyEncodingStrategy = .useDefaultKeys
 
-            // Encode request to JSON
+            // Encode and log the final JSON
+            print("\n🔍 Final JSON Request")
+            print("------------------")
             let jsonData = try encoder.encode(request)
-
-            print("\n📦 Final JSON Request:")
             if let jsonString = String(data: jsonData, encoding: .utf8) {
                 print(jsonString)
             }
 
-            print("\n🚀 Calling Cloud Function...")
+            print("\n🚀 Sending request to Cloud Function...")
 
             // Convert to dictionary before sending to Firebase
             let dictionary = try JSONSerialization.jsonObject(with: jsonData, options: []) as! [String: Any]
