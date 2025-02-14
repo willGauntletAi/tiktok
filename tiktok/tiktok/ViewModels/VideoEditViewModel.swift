@@ -729,8 +729,6 @@ class VideoEditViewModel: ObservableObject {
 
     @MainActor
     func addClip(from url: URL) async throws {
-        isProcessing = true
-
         do {
             print("Adding clip from URL: \(url)")
 
@@ -831,12 +829,14 @@ class VideoEditViewModel: ObservableObject {
             // Add to history
             addHistoryEntry(title: "Add Clip", action: .addClip(clipId: clips.last?.id ?? 0))
 
-            // Start pose detection after everything else is set up
-            try await startPoseDetection(for: newClip)
-
             // Clean up the original temporary file if needed
             if url.path.contains("/tmp/") {
                 try? FileManager.default.removeItem(at: url)
+            }
+
+            // Start pose detection in the background
+            Task.detached {
+                try await self.startPoseDetection(for: newClip)
             }
 
         } catch {
@@ -848,8 +848,6 @@ class VideoEditViewModel: ObservableObject {
             }
             throw error
         }
-
-        isProcessing = false
     }
 
     private func updatePlayer(with videoComposition: AVMutableVideoComposition? = nil) {
