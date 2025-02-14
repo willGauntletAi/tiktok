@@ -14,10 +14,6 @@ struct ContentView: View {
     @StateObject private var navigator = Navigator()
     @State private var selectedTab = 0
 
-    private func logNavigation(_ message: String) {
-        print("🎬 ContentView: \(message)")
-    }
-
     var body: some View {
         NavigationStack(path: $navigator.path) {
             Group {
@@ -43,10 +39,6 @@ struct ContentView: View {
                     }
                     .navigationDestination(for: Destination.self) { destination in
                         view(for: destination)
-                            .onAppear {
-                                logNavigation("Creating view for destination: \(destination.id)")
-                                logNavigation("Current path count: \(navigator.path.count)")
-                            }
                     }
                 } else {
                     LoginView()

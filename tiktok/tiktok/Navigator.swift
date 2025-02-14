@@ -62,7 +62,6 @@ func view(for destination: Destination) -> some View {
             startAt: startIndex,
             showBackButton: true,
             onBack: {
-                print("🎬 Navigator: Popping view after back button tap")
                 withAnimation {
                     Navigator.shared.pop()
                 }
@@ -82,7 +81,6 @@ func view(for destination: Destination) -> some View {
             startAt: 0,
             showBackButton: true,
             onBack: {
-                print("🎬 Navigator: Popping view after back button tap")
                 withAnimation {
                     Navigator.shared.pop()
                 }
@@ -94,7 +92,6 @@ func view(for destination: Destination) -> some View {
             startAt: 0,
             showBackButton: true,
             onBack: {
-                print("🎬 Navigator: Popping view after back button tap")
                 withAnimation {
                     Navigator.shared.pop()
                 }
@@ -106,7 +103,6 @@ func view(for destination: Destination) -> some View {
             startAt: 0,
             showBackButton: true,
             onBack: {
-                print("🎬 Navigator: Popping view after back button tap")
                 withAnimation {
                     Navigator.shared.pop()
                 }
@@ -137,12 +133,11 @@ final class Navigator: ObservableObject {
     static let shared = Navigator()
 
     private func logNavigation(_ message: String) {
-        print("🎬 Navigator: \(message)")
+        // Remove logging
     }
 
     func navigate(to destination: Destination) {
-        logNavigation("Navigating to \(destination.id)")
-
+        // Remove logging
         switch destination {
         case .videoDetail, .videoFeed, .profile, .userProfile,
              .exercise, .workout, .workoutPlan, .profileVideo,
@@ -154,7 +149,7 @@ final class Navigator: ObservableObject {
     }
 
     func replace(with destination: Destination) {
-        logNavigation("Replacing current view with \(destination.id)")
+        // Remove logging
         if !path.isEmpty {
             path.removeLast()
             path.append(destination)
@@ -162,7 +157,7 @@ final class Navigator: ObservableObject {
     }
 
     func pop() {
-        logNavigation("Popping view")
+        // Remove logging
         withAnimation {
             if !path.isEmpty {
                 path.removeLast()

@@ -61,13 +61,11 @@ struct VideoPicker: UIViewControllerRepresentable {
 
                     if let error = error {
                         print("Error loading video file: \(error.localizedDescription)")
-                        // Try fallback method
                         self.loadVideoAsData(provider: provider, tempURL: tempURL)
                         return
                     }
 
                     guard let originalURL = url else {
-                        // Try fallback method
                         self.loadVideoAsData(provider: provider, tempURL: tempURL)
                         return
                     }
@@ -84,13 +82,12 @@ struct VideoPicker: UIViewControllerRepresentable {
                         }
                     } catch {
                         print("Error copying video: \(error.localizedDescription)")
-                        // Try fallback method
                         self.loadVideoAsData(provider: provider, tempURL: tempURL)
                     }
                 }
             } else {
                 // Try fallback method
-                loadVideoAsData(provider: provider, tempURL: tempURL)
+                self.loadVideoAsData(provider: provider, tempURL: tempURL)
             }
         }
 
@@ -119,7 +116,6 @@ struct VideoPicker: UIViewControllerRepresentable {
                         }
                     } catch {
                         print("Error writing video data: \(error.localizedDescription)")
-                        // Clean up on error
                         try? FileManager.default.removeItem(at: tempURL)
                         DispatchQueue.main.async {
                             self.parent.isAddingClip = false
@@ -509,7 +505,6 @@ struct VideoEditView: View {
                             HStack(spacing: 12) {
                                 // Camera button
                                 Button("Record") {
-                                    print("Camera button tapped")
                                     showCamera = true
                                 }
                                 .buttonStyle(.borderedProminent)
@@ -527,11 +522,8 @@ struct VideoEditView: View {
                                 // Split button
                                 if !viewModel.clips.isEmpty {
                                     Button("Split") {
-                                        print("Split button tapped at position: \(viewModel.currentPosition)")
                                         Task { @MainActor in
-                                            print("Starting split operation...")
                                             await viewModel.splitClip(at: viewModel.currentPosition)
-                                            print("Split operation completed")
                                         }
                                     }
                                     .buttonStyle(.borderedProminent)

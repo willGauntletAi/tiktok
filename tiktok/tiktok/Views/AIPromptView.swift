@@ -59,7 +59,7 @@ struct AIPromptView: View {
                     Task {
                         viewModel.shouldWaitForPoseDetection = true
                         isLoading = true
-                        await viewModel.requestAIEditSuggestion(prompt: prompt)
+                        await viewModel.continueAIRequest(prompt: prompt, waitForPoseDetection: true)
                         isLoading = false
                         dismiss()
                     }
@@ -68,7 +68,7 @@ struct AIPromptView: View {
                     Task {
                         viewModel.shouldWaitForPoseDetection = false
                         isLoading = true
-                        await viewModel.requestAIEditSuggestion(prompt: prompt)
+                        await viewModel.continueAIRequest(prompt: prompt, waitForPoseDetection: false)
                         isLoading = false
                         dismiss()
                     }

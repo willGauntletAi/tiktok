@@ -24,13 +24,12 @@ class SetDetectionService {
     ///   - poseResults: Array of pose detection results to analyze
     /// - Returns: Array of detected exercise sets
     func detectSets(from poseResults: [PoseResult]) -> [DetectedExerciseSet] {
-        print("🏃‍♂️ Starting set detection with \(poseResults.count) pose results")
         guard !poseResults.isEmpty else {
             print("❌ No pose results to analyze")
             return []
         }
 
-        // Convert PoseResults to frames (dictionary mapping joint names to positions and confidences)
+        // Convert PoseResults to frames
         let frames: [Frame] = poseResults.map { poseResult in
             var frame: [String: JointData] = [:]
             for keypoint in poseResult.keypoints {
@@ -41,7 +40,6 @@ class SetDetectionService {
             }
             return frame
         }
-        print("📊 Converted \(frames.count) frames for analysis")
 
         // Find the key joint and its cycles
         guard let candidate = selectKeyJointAcrossCandidates(frames: frames,
@@ -55,42 +53,23 @@ class SetDetectionService {
         let keyJoint = candidate.joint
         let cycles = candidate.cycles
         let distanceSeries = candidate.distanceSeries
-        print("🔑 Selected key joint: \(keyJoint) with \(cycles.count) cycles")
-        print("🦴 Joint details:")
-        if let keypointType = KeypointType(rawValue: keyJoint) {
-            print("  Type: \(keypointType)")
-            print("  Side: \(keypointType.rawValue.hasPrefix("left") ? "Left" : keypointType.rawValue.hasPrefix("right") ? "Right" : "Center")")
-            print("  Body part: \(keypointType.bodyPart)")
-        }
 
-        // Log cycle details
+        // Log only warnings for cycles
         for (i, cycle) in cycles.enumerated() {
-            let startTime = poseResults[cycle.startIndex].timestamp
-            let peakTime = poseResults[cycle.peakIndex].timestamp
-            let endTime = poseResults[cycle.endIndex].timestamp
             let startToEndDistance = abs(distanceSeries[cycle.endIndex] - distanceSeries[cycle.startIndex])
-            print("  Rep \(i + 1) using \(keyJoint):")
-            print("    Start: \(String(format: "%.2f", startTime))s")
-            print("    Peak:  \(String(format: "%.2f", peakTime))s")
-            print("    End:   \(String(format: "%.2f", endTime))s")
-            print("    Duration: \(String(format: "%.2f", endTime - startTime))s")
-            print("    Amplitude: \(String(format: "%.3f", cycle.amplitude)) (threshold: \(String(format: "%.3f", amplitudeThreshold)))")
-            print("    Start-End Distance: \(String(format: "%.3f", startToEndDistance)) (tolerance: \(String(format: "%.3f", tolerance)))")
-            print("    Average Confidence: \(String(format: "%.2f", cycle.averageConfidence))")
-            print("    Movement: \(cycle.isAscending ? "Bottom to Top" : "Top to Bottom")")
+            
             if cycle.amplitude > amplitudeThreshold * 2 {
-                print("    ⚠️ Large movement detected - possible form issue")
+                print("⚠️ Large movement detected - possible form issue")
             } else if cycle.amplitude < amplitudeThreshold * 1.2 {
-                print("    ⚠️ Small movement detected - possible partial rep")
+                print("⚠️ Small movement detected - possible partial rep")
             }
             if startToEndDistance > tolerance {
-                print("    ⚠️ End position differs from start by \(String(format: "%.3f", startToEndDistance)) - possible incomplete return")
+                print("⚠️ End position differs from start by \(String(format: "%.3f", startToEndDistance)) - possible incomplete return")
             }
         }
 
         // Segment the recording into exercise sets based on gaps between cycles
         let segments = segmentSetsBasedOnCycles(cycles: cycles, maxCycleGap: maxCycleGap)
-        print("📦 Found \(segments.count) exercise sets")
 
         // Convert segments to DetectedExerciseSet objects
         let detectedSets = segments.map { segment in
@@ -102,22 +81,6 @@ class SetDetectionService {
             )
         }
 
-        // Log set details
-        for (i, set) in detectedSets.enumerated() {
-            print("Set \(i + 1) using \(set.keyJoint):")
-            print("  Reps: \(set.reps)")
-            print("  Start Time: \(String(format: "%.2f", set.startTime))s")
-            print("  End Time: \(String(format: "%.2f", set.endTime))s")
-            print("  Duration: \(String(format: "%.2f", set.endTime - set.startTime))s")
-
-            // Calculate average rep duration for the set
-            if set.reps > 0 {
-                let avgDuration = (set.endTime - set.startTime) / Double(set.reps)
-                print("  Average rep duration: \(String(format: "%.2f", avgDuration))s")
-            }
-        }
-
-        print("✅ Set detection completed")
         return detectedSets
     }
 
@@ -200,11 +163,7 @@ class SetDetectionService {
         }
 
         // Second pass: smooth the distances to reduce noise
-        let smoothedDistances = smoothDistances(distances)
-
-        print("📏 Computed \(smoothedDistances.count) distances for joint: \(joint)")
-        print("   Average confidence: \(String(format: "%.2f", confidences.reduce(0, +) / Float(confidences.count)))")
-        return smoothedDistances
+        return smoothDistances(distances)
     }
 
     private func detectCycles(distanceSeries: [Double],
@@ -227,8 +186,6 @@ class SetDetectionService {
                 maxima.append(i)
             }
         }
-
-        print("📉 Found \(minima.count) minima and \(maxima.count) maxima in distance series")
 
         // Need at least one minimum and one maximum for a cycle
         guard !minima.isEmpty, !maxima.isEmpty else {
@@ -287,14 +244,6 @@ class SetDetectionService {
                             averageConfidence: 0.8, // TODO: Calculate actual confidence
                             isAscending: true
                         ))
-                        print("✅ Valid ascending cycle detected: amplitude = \(String(format: "%.3f", amplitude)), start-end distance = \(String(format: "%.3f", startToEndDistance))")
-                    } else {
-                        if amplitude < amplitudeThreshold {
-                            print("⚠️ Cycle rejected: insufficient amplitude (\(String(format: "%.3f", amplitude)))")
-                        }
-                        if startToEndDistance > tolerance {
-                            print("⚠️ Cycle rejected: incomplete return (\(String(format: "%.3f", startToEndDistance)))")
-                        }
                     }
                     cycleStart = i
                     currentPhase = .ascending
@@ -312,14 +261,6 @@ class SetDetectionService {
                             averageConfidence: 0.8, // TODO: Calculate actual confidence
                             isAscending: false
                         ))
-                        print("✅ Valid descending cycle detected: amplitude = \(String(format: "%.3f", amplitude)), start-end distance = \(String(format: "%.3f", startToEndDistance))")
-                    } else {
-                        if amplitude < amplitudeThreshold {
-                            print("⚠️ Cycle rejected: insufficient amplitude (\(String(format: "%.3f", amplitude)))")
-                        }
-                        if startToEndDistance > tolerance {
-                            print("⚠️ Cycle rejected: incomplete return (\(String(format: "%.3f", startToEndDistance)))")
-                        }
                     }
                     cycleStart = i
                     currentPhase = .descending
@@ -346,20 +287,16 @@ class SetDetectionService {
                     averageConfidence: 0.8, // TODO: Calculate actual confidence
                     isAscending: startsFromBottom
                 ))
-                print("✅ Incomplete cycle at boundary added: amplitude = \(String(format: "%.3f", amplitude))")
-            } else {
-                print("⚠️ Incomplete cycle at boundary rejected: insufficient amplitude (\(String(format: "%.3f", amplitude)))")
             }
         }
 
-        print("🔄 Detected \(cycles.count) valid cycles")
         return cycles
     }
 
     private func segmentSetsBasedOnCycles(cycles: [Cycle], maxCycleGap: Int) -> [ExerciseSegment] {
         var segments: [ExerciseSegment] = []
         guard !cycles.isEmpty else {
-            print("⚠️ No cycles to segment")
+            print("❌ No cycles to segment")
             return segments
         }
 
@@ -370,7 +307,6 @@ class SetDetectionService {
             let gap = currentCycle.startIndex - previousCycle.endIndex
             if gap > maxCycleGap {
                 // End the current segment and start a new one
-                print("📋 Starting new set: gap of \(gap) frames exceeded maximum of \(maxCycleGap)")
                 let segment = ExerciseSegment(
                     startIndex: currentCycles.first!.startIndex,
                     endIndex: currentCycles.last!.endIndex,
@@ -405,11 +341,9 @@ class SetDetectionService {
             return nil
         }
 
-        print("🔍 Analyzing \(candidateJoints.count) candidate joints")
         var bestCandidate: (joint: String, cycles: [Cycle], distanceSeries: [Double])?
 
         for joint in candidateJoints {
-            print("\n📊 Analyzing joint: \(joint)")
             let distanceSeries = computeDistanceSeries(for: joint, frames: frames)
             let cycles = detectCycles(distanceSeries: distanceSeries,
                                       amplitudeThreshold: amplitudeThreshold,
@@ -418,18 +352,14 @@ class SetDetectionService {
             // Choose the joint that produces the most valid cycles
             if let best = bestCandidate {
                 if cycles.count > best.cycles.count {
-                    print("🔄 New best joint found: \(joint) with \(cycles.count) cycles (previous best: \(best.joint) with \(best.cycles.count) cycles)")
                     bestCandidate = (joint, cycles, distanceSeries)
                 }
             } else {
-                print("🔄 First candidate: \(joint) with \(cycles.count) cycles")
                 bestCandidate = (joint, cycles, distanceSeries)
             }
         }
 
-        if let best = bestCandidate {
-            print("✅ Selected key joint: \(best.joint) with \(best.cycles.count) cycles")
-        } else {
+        if bestCandidate == nil {
             print("❌ No suitable key joint found")
         }
 

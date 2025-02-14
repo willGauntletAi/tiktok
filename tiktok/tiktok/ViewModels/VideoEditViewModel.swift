@@ -236,93 +236,122 @@ class VideoEditViewModel: ObservableObject {
     func updateClipTrim(startTime: Double, endTime: Double) {
         guard let clip = selectedClip,
               let index = selectedClipIndex
-        else { return }
+        else {
+            print("❌ Trim failed: No clip selected")
+            return
+        }
 
-        print("🔄 Trimming clip \(clip.id) using split and remove:")
-        print("  Original state:")
-        print("    - Composition times: \(clip.startTime) to \(clip.endTime)")
-        print("    - Asset times: \(clip.assetStartTime) to \(clip.assetStartTime + clip.assetDuration)")
-        print("    - Target trim: \(startTime) to \(endTime)")
+        print("\n🔄 Trimming clip \(clip.id):")
+        print("  Initial state:")
+        print("    • Timeline position: \(clip.startTime) to \(clip.endTime)")
+        print("    • Asset range: \(clip.assetStartTime) to \(clip.assetStartTime + clip.assetDuration)")
+        print("    • Requested trim: \(startTime) to \(endTime)")
+        print("    • Current index: \(index)")
 
         Task {
-                // Calculate how much time we'll remove from the start (if any)
-                let startTimeRemoval = startTime > clip.startTime ? startTime - clip.startTime : 0
-                print("  Start time removal: \(String(format: "%.2f", startTimeRemoval))s")
-
-                // Adjust the end split point by the amount we'll remove from the start
-                let adjustedEndTime = endTime - startTimeRemoval
-                print("  Adjusted end time: \(String(format: "%.2f", adjustedEndTime))s")
-
-                // Keep track of our target clip's ID since the index will change
-                let targetClipId = clip.id
-                var currentIndex = index
-
-                // Step 1: If we need to trim the start, split at the new start point and remove the first part
-                if startTime > clip.startTime {
-                    print("  Splitting at start point: \(startTime)")
-                    await splitClip(at: startTime)
-                    
-                    // Find where our target clip went after the split
-                    if let newIndex = clips.firstIndex(where: { $0.id == targetClipId }) {
-                        print("  Target clip moved to index \(newIndex)")
-                        currentIndex = newIndex
-                    } else {
-                        print("❌ Lost track of target clip after split")
-                        return
-                    }
-                    
-                    // Remove the first part (which is one index before our current position)
-                    let deleteIndex = currentIndex - 1
-                    if deleteIndex >= 0 && deleteIndex < clips.count {
-                        print("  Removing first part at index \(deleteIndex)")
-                        deleteClip(at: deleteIndex)
-                        // After deletion, our target clip moved back one position
-                        currentIndex -= 1
-                    }
-                }
-
-                // Verify we can still find our clip
-                guard let finalIndex = clips.firstIndex(where: { $0.id == targetClipId }) else {
-                    print("❌ Lost track of target clip before end trim")
-                    return
-                }
-                currentIndex = finalIndex
+            // Create mutable target end time
+            var targetEndTime = endTime
+            
+            // Step 1: If we need to trim the start, split at the new start point and remove the first part
+            if startTime > clip.startTime {
+                print("\n  Step 1: Trimming start")
+                print("    • Splitting at time: \(startTime)")
+                print("    • Before split - Clips count: \(clips.count)")
                 
-                // Get the updated clip state
-                if clips[safe: currentIndex] == nil {
-                    print("❌ Target clip index out of bounds")
-                    return
-                }
-
-                // Step 2: If we need to trim the end, split at the adjusted end time and remove the second part
-                if endTime < clip.endTime {
-                    print("  Splitting at adjusted end point: \(adjustedEndTime)")
-                    await splitClip(at: adjustedEndTime)
+                if let (firstId, secondId) = await splitClip(at: startTime) {
+                    print("    • After split - Clips count: \(clips.count)")
+                    print("    • All clips after split:")
+                    for (i, c) in clips.enumerated() {
+                        print("      [\(i)] ID: \(c.id), Time: \(c.startTime) to \(c.endTime)")
+                    }
                     
-                    // Find our clip's position again after the split
-                    if let newIndex = clips.firstIndex(where: { $0.id == targetClipId }) {
-                        print("  Target clip at index \(newIndex)")
-                        currentIndex = newIndex
+                    // Find the second clip (the one we want to keep) and remove the first part
+                    if let newIndex = clips.firstIndex(where: { $0.id == secondId }) {
+                        print("    • Target clip at index \(newIndex)")
                         
-                        // Remove the second part (which is right after our current position)
-                        if clips.count > currentIndex + 1 {
-                            print("  Removing second part at index \(currentIndex + 1)")
-                            deleteClip(at: currentIndex + 1)
+                        // Remove the first part (which is one index before)
+                        let deleteIndex = newIndex - 1
+                        if deleteIndex >= 0 && deleteIndex < clips.count {
+                            let firstPartDuration = clips[deleteIndex].endTime - clips[deleteIndex].startTime
+                            print("    • Removing first part at index \(deleteIndex) (duration: \(firstPartDuration))")
+                            deleteClip(at: deleteIndex)
+                            print("    • After deletion - Clips count: \(clips.count)")
+                            print("    • All clips after deletion:")
+                            for (i, c) in clips.enumerated() {
+                                print("      [\(i)] ID: \(c.id), Time: \(c.startTime) to \(c.endTime)")
+                            }
+                            
+                            // Adjust end time since all clips shifted back by firstPartDuration
+                            targetEndTime -= firstPartDuration
+                            print("    • Adjusted end time from \(endTime) to \(targetEndTime)")
                         }
-                    } else {
-                        print("❌ Lost track of target clip after end split")
-                        return
                     }
                 }
+            }
 
-                print("  Final state:")
-                if let finalClip = clips.first(where: { $0.id == targetClipId }) {
-                    print("    - Composition times: \(finalClip.startTime) to \(finalClip.endTime)")
-                    print("    - Asset times: \(finalClip.assetStartTime) to \(finalClip.assetStartTime + finalClip.assetDuration)")
+            // Find the clip we want to trim at the end
+            guard let clipToTrim = clips.first(where: { $0.endTime > targetEndTime }) else {
+                print("❌ Could not find clip to trim at end time \(targetEndTime)")
+                print("    • Current clips:")
+                for (i, c) in clips.enumerated() {
+                    print("      [\(i)] ID: \(c.id), Time: \(c.startTime) to \(c.endTime)")
                 }
+                return
+            }
+            
+            let trimIndex = clips.firstIndex(where: { $0.id == clipToTrim.id })!
+            print("\n  Clip state before end trim:")
+            print("    • Current index: \(trimIndex)")
+            print("    • Timeline position: \(clipToTrim.startTime) to \(clipToTrim.endTime)")
 
-                // Update player position
-                await player?.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
+            // Step 2: If we need to trim the end, split at the end time
+            if targetEndTime < clipToTrim.endTime {
+                print("\n  Step 2: Trimming end")
+                print("    • Splitting at time: \(targetEndTime)")
+                print("    • Before split - Clips count: \(clips.count)")
+                
+                if let (firstId, _) = await splitClip(at: targetEndTime) {
+                    print("    • After split - Clips count: \(clips.count)")
+                    print("    • All clips after split:")
+                    for (i, c) in clips.enumerated() {
+                        print("      [\(i)] ID: \(c.id), Time: \(c.startTime) to \(c.endTime)")
+                    }
+                    
+                    // Find the first clip (the one we want to keep) and remove the second part
+                    if let newIndex = clips.firstIndex(where: { $0.id == firstId }) {
+                        print("    • Target clip at index \(newIndex)")
+                        
+                        // Remove the second part (which is right after)
+                        let deleteIndex = newIndex + 1
+                        if deleteIndex < clips.count {
+                            print("    • Removing second part at index \(deleteIndex)")
+                            deleteClip(at: deleteIndex)
+                            print("    • After deletion - Clips count: \(clips.count)")
+                            print("    • All clips after deletion:")
+                            for (i, c) in clips.enumerated() {
+                                print("      [\(i)] ID: \(c.id), Time: \(c.startTime) to \(c.endTime)")
+                            }
+                        }
+                    }
+                }
+            }
+
+            print("\n  Final state:")
+            if let finalClip = clips.first(where: { $0.startTime <= startTime && $0.endTime >= targetEndTime }) {
+                print("    • Timeline position: \(finalClip.startTime) to \(finalClip.endTime)")
+                print("    • Asset range: \(finalClip.assetStartTime) to \(finalClip.assetStartTime + finalClip.assetDuration)")
+            }
+
+            // Update player position
+            await player?.seek(to: CMTime(seconds: startTime, preferredTimescale: 600))
+            
+            // Add to history
+            await MainActor.run {
+                addHistoryEntry(
+                    title: "Trim Clip",
+                    action: .trimClip(clipId: clip.id, startTime: startTime, endTime: targetEndTime)
+                )
+            }
         }
     }
 
@@ -1268,7 +1297,7 @@ class VideoEditViewModel: ObservableObject {
         }
     }
 
-    func splitClip(at time: Double) async {
+    func splitClip(at time: Double) async -> (firstClipId: Int, secondClipId: Int)? {
         print("Splitting clip at time: \(time)")
         
         await MainActor.run {
@@ -1298,7 +1327,7 @@ class VideoEditViewModel: ObservableObject {
         
         guard let index = targetIndex else {
             print("❌ No clip found at time \(time)")
-            return
+            return nil
         }
         
         let clip = clips[index]
@@ -1425,8 +1454,11 @@ class VideoEditViewModel: ObservableObject {
                 try await startPoseDetection(for: secondClip)
             }
             
+            return (firstClip.id, secondClip.id)
+            
         } catch {
             print("❌ Error splitting clip: \(error.localizedDescription)")
+            return nil
         }
     }
 
@@ -1566,23 +1598,20 @@ class VideoEditViewModel: ObservableObject {
         }
         
         if hasIncompleteDetection {
-            // Set the flag and wait for user decision
+            // Signal that we need user input by setting to nil
+            // The view will show the alert and update this value
             shouldWaitForPoseDetection = nil
             
-            // Wait for user to make a choice
-            while shouldWaitForPoseDetection == nil {
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-            
-            // If user chose not to wait, proceed without pose detection data
-            if !shouldWaitForPoseDetection! {
-                await processAIRequest(prompt: prompt, waitForPoseDetection: false)
-                return
-            }
+            // Return early - the view will call continueAIRequest when user makes a choice
+            return
         }
         
-        // Either no incomplete detection or user chose to wait
+        // No incomplete detection, proceed with request
         await processAIRequest(prompt: prompt, waitForPoseDetection: true)
+    }
+    
+    func continueAIRequest(prompt: String, waitForPoseDetection: Bool) async {
+        await processAIRequest(prompt: prompt, waitForPoseDetection: waitForPoseDetection)
     }
     
     private func processAIRequest(prompt: String, waitForPoseDetection: Bool) async {
